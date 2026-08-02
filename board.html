@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#16231B" />
+<title>Coconut Corner — Order Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --iron:#16231B; --iron-2:#1F3128; --iron-line:#2C4234;
+    --cream:#F6ECD6; --cream-dim:#C9BFA6;
+    --gold:#E7A544; --gold-deep:#C6802A;
+    --pandan:#46A45E; --sage:#5B7A63; --sage-dim:#9DB3A4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(120% 80% at 50% -10%, #21362A 0%, var(--iron) 55%) fixed;
+    color:var(--cream);
+    font-family:"Sarabun",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:max(18px,env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
+    min-height:100%;
+  }
+  .wrap{max-width:640px;margin:0 auto}
+
+  header{display:flex;align-items:center;gap:12px;padding:6px 2px 20px}
+  .mark{
+    width:40px;height:40px;border-radius:50%;flex:none;
+    background:
+      radial-gradient(circle at 50% 38%, var(--pandan) 0 30%, transparent 31%),
+      radial-gradient(circle at 50% 50%, var(--gold) 0 60%, var(--gold-deep) 61% 100%);
+    box-shadow:inset 0 -3px 6px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.3);
+  }
+  .brand{font-family:"Mitr";font-weight:500;font-size:1.05rem;letter-spacing:.5px;line-height:1}
+  .brand small{display:block;font-family:"Sarabun";font-weight:400;font-size:.72rem;color:var(--sage-dim);letter-spacing:2px;text-transform:uppercase;margin-top:3px}
+
+  .section-label{
+    display:flex;align-items:baseline;gap:8px;
+    font-family:"Mitr";font-weight:500;margin:6px 2px 14px;
+  }
+  .section-label .th{font-size:1.35rem}
+  .section-label .en{font-family:"Sarabun";font-weight:600;font-size:.7rem;letter-spacing:2px;text-transform:uppercase;color:var(--sage-dim)}
+  .ready .section-label .th{color:var(--gold)}
+
+  /* the signature: finished pancakes, fresh off the griddle */
+  .grid{display:flex;flex-wrap:wrap;gap:14px}
+  .token{
+    --sz:clamp(76px,26vw,104px);
+    width:var(--sz);height:var(--sz);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-family:"Mitr";font-weight:600;line-height:1;
+    font-size:clamp(1.7rem,7vw,2.3rem);
+    position:relative;
+  }
+  .ready .token{
+    color:#3A2409;
+    background:radial-gradient(circle at 42% 34%, #F6C877 0 38%, var(--gold) 55%, var(--gold-deep) 100%);
+    box-shadow:inset 0 -6px 12px rgba(120,64,0,.4), inset 0 3px 8px rgba(255,240,200,.55),
+               0 6px 18px rgba(231,165,68,.28);
+    animation:pop .45s cubic-bezier(.2,1.3,.5,1) both;
+  }
+  .making .token{
+    color:var(--sage-dim);
+    background:radial-gradient(circle at 42% 34%, #2A4034 0 40%, var(--iron-2) 100%);
+    box-shadow:inset 0 -5px 10px rgba(0,0,0,.4), inset 0 2px 6px rgba(120,150,130,.15);
+    border:1px solid var(--iron-line);
+  }
+  .making .token::after{ /* still cooking: soft steam ring */
+    content:"";position:absolute;inset:0;border-radius:50%;
+    border:2px dashed var(--sage);opacity:.28;
+    animation:spin 14s linear infinite;
+  }
+
+  @keyframes pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .making{margin-top:34px;padding-top:26px;border-top:1px solid var(--iron-line)}
+  .empty{color:var(--sage-dim);font-size:.95rem;padding:10px 4px 4px}
+
+  footer{margin-top:40px;text-align:center;color:var(--sage-dim);font-size:.72rem;letter-spacing:.4px}
+  .live{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--pandan);box-shadow:0 0 0 0 var(--pandan);animation:pulse 2.2s ease-out infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(70,164,94,.5)}70%,100%{box-shadow:0 0 0 8px rgba(70,164,94,0)}}
+  .off .dot{background:var(--gold-deep);animation:none}
+
+  @media (prefers-reduced-motion:reduce){
+    .ready .token,.making .token::after,.dot{animation:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark" aria-hidden="true"></div>
+    <div class="brand">Coconut Corner<small>Khanom Krok · coconut pancakes</small></div>
+  </header>
+
+  <section class="ready">
+    <div class="section-label"><span class="th">Ready</span><span class="en">Come pick up</span></div>
+    <div class="grid" id="ready"></div>
+    <div class="empty" id="ready-empty" hidden>Nothing ready just yet</div>
+  </section>
+
+  <section class="making">
+    <div class="section-label"><span class="th">Making now</span><span class="en">In the pan</span></div>
+    <div class="grid" id="making"></div>
+    <div class="empty" id="making-empty" hidden>No orders in the pan</div>
+  </section>
+
+  <footer>
+    <span class="live" id="live"><span class="dot"></span> Updates automatically</span>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // ─── 1. Fill in your Supabase project details ───────────────
+  const SUPABASE_URL  = "https://YOUR-PROJECT.supabase.co";
+  const SUPABASE_ANON = "YOUR-ANON-KEY";
+  // ────────────────────────────────────────────────────────────
+
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  const readyEl = document.getElementById("ready");
+  const makingEl = document.getElementById("making");
+
+  function tokens(el, rows, emptyId){
+    el.innerHTML = "";
+    rows.forEach(r=>{
+      const d = document.createElement("div");
+      d.className = "token";
+      d.textContent = r.ticket;
+      el.appendChild(d);
+    });
+    document.getElementById(emptyId).hidden = rows.length > 0;
+  }
+
+  async function load(){
+    const { data, error } = await sb
+      .from("orders")
+      .select("ticket,status,created_at,ready_at")
+      .neq("status","picked_up")
+      .gt("created_at", new Date(Date.now() - 3*3600*1000).toISOString())
+      .order("created_at",{ascending:true});
+    if(error){ setLive(false); return; }
+    setLive(true);
+    const ready  = data.filter(r=>r.status==="ready");
+    const making = data.filter(r=>r.status==="preparing");
+    // newest-ready first feels natural to scan
+    ready.sort((a,b)=> (b.ready_at||"").localeCompare(a.ready_at||""));
+    tokens(readyEl, ready, "ready-empty");
+    tokens(makingEl, making, "making-empty");
+  }
+
+  function setLive(ok){
+    document.getElementById("live").classList.toggle("off", !ok);
+  }
+
+  sb.channel("board")
+    .on("postgres_changes",{event:"*",schema:"public",table:"orders"}, load)
+    .subscribe();
+
+  load();
+  setInterval(load, 30000); // safety refresh if a realtime event is missed
+</script>
+</body>
+</html>
