@@ -1,478 +1,335 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#16231B" />
-  <title>Coconut Corner — Staff</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&family=Sarabun:wght@400;600&display=swap"
-    rel="stylesheet">
-  <style>
-    :root {
-      --iron: #16231B;
-      --iron-2: #1F3128;
-      --iron-line: #2C4234;
-      --cream: #F6ECD6;
-      --gold: #E7A544;
-      --gold-deep: #C6802A;
-      --pandan: #46A45E;
-      --pandan-deep: #2F7A44;
-      --sage-dim: #9DB3A4;
-      --danger: #C4553C;
-    }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#16231B" />
+<title>Coconut Corner — Staff</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --iron:#16231B; --iron-2:#1F3128; --iron-line:#2C4234;
+    --cream:#F6ECD6; --gold:#E7A544; --gold-deep:#C6802A;
+    --pandan:#46A45E; --pandan-deep:#2F7A44; --sage-dim:#9DB3A4; --danger:#C4553C;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(120% 80% at 50% -10%, #21362A 0%, var(--iron) 55%) fixed;
+    color:var(--cream);font-family:"Sarabun",system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+    padding:max(16px,env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:100%;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 18px}
+  .brand{font-family:"Mitr";font-weight:500;font-size:1rem;letter-spacing:.4px}
+  .brand small{display:block;font-family:"Sarabun";font-weight:400;font-size:.68rem;color:var(--sage-dim);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+  .count{font-family:"Mitr";font-weight:600;font-size:1.6rem;color:var(--gold)}
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0
-    }
+  h2{font-family:"Mitr";font-weight:500;font-size:.8rem;letter-spacing:2px;text-transform:uppercase;color:var(--sage-dim);margin:22px 2px 12px}
 
-    html,
-    body {
-      height: 100%
-    }
+  .row{
+    display:flex;align-items:center;gap:14px;
+    background:var(--iron-2);border:1px solid var(--iron-line);border-radius:16px;
+    padding:12px 12px 12px 18px;margin-bottom:12px;
+  }
+  .tk{font-family:"Mitr";font-weight:600;font-size:1.9rem;line-height:1;min-width:2ch;align-self:flex-start;padding-top:2px}
+  .meta{flex:1;min-width:0}
 
-    body {
-      background: radial-gradient(120% 80% at 50% -10%, #21362A 0%, var(--iron) 55%) fixed;
-      color: var(--cream);
-      font-family: "Sarabun", system-ui, sans-serif;
-      -webkit-font-smoothing: antialiased;
-      padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
-    }
+  /* order contents as a tick-off checklist */
+  .items{list-style:none;display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+  .items li{
+    display:flex;align-items:center;gap:9px;
+    font-size:1rem;line-height:1.2;color:var(--cream);font-weight:600;
+    padding:7px 8px;border-radius:9px;cursor:pointer;user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .items li:active{background:rgba(255,255,255,.05)}
+  .items .box{
+    flex:none;width:22px;height:22px;border-radius:7px;
+    border:2px solid var(--sage-dim);display:flex;align-items:center;justify-content:center;
+    font-size:.9rem;color:transparent;transition:background .12s,border-color .12s;
+  }
+  .items li.done .box{background:var(--pandan);border-color:var(--pandan);color:#0E1A12}
+  .items li.done .txt{color:var(--sage-dim);text-decoration:line-through}
+  .items li.done .q{color:var(--sage-dim)}
+  .items .q{color:var(--gold);margin-right:1px}
+  .items.none{color:var(--sage-dim);font-weight:400;font-size:.9rem;padding-left:2px}
+  /* ready rows: show the list as a plain confirmation, no tapping */
+  .items.readonly li{cursor:default;padding:2px 0}
+  .items.readonly .box{display:none}
+  .wait{font-size:.78rem;color:var(--sage-dim)}
+  .prog{color:var(--gold);font-weight:600}
+  .prog.all{color:var(--pandan)}
 
-    .wrap {
-      max-width: 100%;
-      margin: 0 auto
-    }
+  .btn{
+    font-family:"Mitr";font-weight:500;font-size:1rem;color:#20140A;align-self:center;
+    background:linear-gradient(180deg,#F2B85A,var(--gold-deep));
+    border:none;border-radius:13px;padding:15px 20px;cursor:pointer;flex:none;
+    box-shadow:0 3px 0 rgba(120,80,10,.5);transition:transform .06s,box-shadow .06s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(120,80,10,.5)}
+  .btn.ghost{
+    background:transparent;color:var(--sage-dim);
+    border:1px solid var(--iron-line);box-shadow:none;font-weight:400;font-family:"Sarabun";font-size:.9rem;padding:12px 16px;
+  }
+  .actions{display:flex;align-items:center;gap:10px;flex:none;align-self:center}
+  .btn.back{
+    background:transparent;color:var(--sage-dim);
+    border:1px solid var(--iron-line);box-shadow:none;
+    width:44px;height:44px;padding:0;border-radius:12px;
+    font-size:1.25rem;display:flex;align-items:center;justify-content:center;
+  }
+  .btn.back:active{transform:translateY(1px);box-shadow:none}
+  .row.done{background:transparent;border-style:dashed}
+  .row.done .tk{color:var(--gold)}
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 2px 2px 18px
-    }
+  .empty{color:var(--sage-dim);font-size:.9rem;padding:4px}
 
-    .brand {
-      font-family: "Mitr";
-      font-weight: 500;
-      font-size: 1rem;
-      letter-spacing: .4px
-    }
+  /* transient undo bar after Picked up */
+  #undo{
+    position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(16px + env(safe-area-inset-bottom));
+    width:min(440px,calc(100% - 32px));z-index:20;overflow:hidden;
+    display:flex;align-items:center;gap:12px;
+    background:var(--iron-2);border:1px solid var(--iron-line);
+    border-radius:14px;padding:14px 14px 16px;
+    box-shadow:0 10px 28px rgba(0,0,0,.45);
+  }
+  #undo-text{flex:1;font-size:.95rem;color:var(--cream)}
+  #undo-btn{
+    font-family:"Mitr";font-weight:500;font-size:.95rem;color:#20140A;flex:none;
+    background:linear-gradient(180deg,#F2B85A,var(--gold-deep));
+    border:none;border-radius:11px;padding:11px 18px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #undo-btn:active{transform:translateY(1px)}
+  #undo-bar{position:absolute;left:0;bottom:0;height:3px;width:100%;background:var(--pandan)}
+  #undo.run #undo-bar{animation:undocount 10s linear forwards}
+  @keyframes undocount{from{width:100%}to{width:0%}}
+  @media (prefers-reduced-motion:reduce){ #undo.run #undo-bar{animation:none;width:0} }
 
-    .brand small {
-      display: block;
-      font-family: "Sarabun";
-      font-weight: 400;
-      font-size: .68rem;
-      color: var(--sage-dim);
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-top: 2px
-    }
-
-    .count {
-      font-family: "Mitr";
-      font-weight: 600;
-      font-size: 1.6rem;
-      color: var(--gold)
-    }
-
-    h2 {
-      font-family: "Mitr";
-      font-weight: 500;
-      font-size: .8rem;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: var(--sage-dim);
-      margin: 22px 2px 12px
-    }
-
-    .row {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      background: var(--iron-2);
-      border: 1px solid var(--iron-line);
-      border-radius: 16px;
-      padding: 12px 12px 12px 18px;
-      margin-bottom: 12px;
-    }
-
-    .tk {
-      font-family: "Mitr";
-      font-weight: 600;
-      font-size: 1.9rem;
-      line-height: 1;
-      min-width: 2ch;
-      align-self: flex-start;
-      padding-top: 2px
-    }
-
-    .meta {
-      flex: 1;
-      min-width: 0
-    }
-
-    /* order contents as a tick-off checklist */
-    .items {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      margin-bottom: 6px
-    }
-
-    .items li {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      font-size: 1rem;
-      line-height: 1.2;
-      color: var(--cream);
-      font-weight: 600;
-      padding: 7px 8px;
-      border-radius: 9px;
-      cursor: pointer;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .items li:active {
-      background: rgba(255, 255, 255, .05)
-    }
-
-    .items .box {
-      flex: none;
-      width: 22px;
-      height: 22px;
-      border-radius: 7px;
-      border: 2px solid var(--sage-dim);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: .9rem;
-      color: transparent;
-      transition: background .12s, border-color .12s;
-    }
-
-    .items li.done .box {
-      background: var(--pandan);
-      border-color: var(--pandan);
-      color: #0E1A12
-    }
-
-    .items li.done .txt {
-      color: var(--sage-dim);
-      text-decoration: line-through
-    }
-
-    .items li.done .q {
-      color: var(--sage-dim)
-    }
-
-    .items .q {
-      color: var(--gold);
-      margin-right: 1px
-    }
-
-    .items.none {
-      color: var(--sage-dim);
-      font-weight: 400;
-      font-size: .9rem;
-      padding-left: 2px
-    }
-
-    /* ready rows: show the list as a plain confirmation, no tapping */
-    .items.readonly li {
-      cursor: default;
-      padding: 2px 0
-    }
-
-    .items.readonly .box {
-      display: none
-    }
-
-    .wait {
-      font-size: .78rem;
-      color: var(--sage-dim)
-    }
-
-    .prog {
-      color: var(--gold);
-      font-weight: 600
-    }
-
-    .prog.all {
-      color: var(--pandan)
-    }
-
-    .btn {
-      font-family: "Mitr";
-      font-weight: 500;
-      font-size: 1rem;
-      color: #20140A;
-      align-self: center;
-      background: linear-gradient(180deg, #F2B85A, var(--gold-deep));
-      border: none;
-      border-radius: 13px;
-      padding: 15px 20px;
-      cursor: pointer;
-      flex: none;
-      box-shadow: 0 3px 0 rgba(120, 80, 10, .5);
-      transition: transform .06s, box-shadow .06s;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .btn:active {
-      transform: translateY(2px);
-      box-shadow: 0 1px 0 rgba(120, 80, 10, .5)
-    }
-
-    .btn.ghost {
-      background: transparent;
-      color: var(--sage-dim);
-      border: 1px solid var(--iron-line);
-      box-shadow: none;
-      font-weight: 400;
-      font-family: "Sarabun";
-      font-size: .9rem;
-      padding: 12px 16px;
-    }
-
-    .row.done {
-      background: transparent;
-      border-style: dashed
-    }
-
-    .row.done .tk {
-      color: var(--gold)
-    }
-
-    .empty {
-      color: var(--sage-dim);
-      font-size: .9rem;
-      padding: 4px
-    }
-
-    /* PIN gate */
-    #gate {
-      position: fixed;
-      inset: 0;
-      background: var(--iron);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      gap: 18px;
-      padding: 24px;
-      z-index: 10
-    }
-
-    #gate h1 {
-      font-family: "Mitr";
-      font-weight: 500;
-      font-size: 1.2rem
-    }
-
-    #pin {
-      font-family: "Mitr";
-      font-size: 1.6rem;
-      text-align: center;
-      letter-spacing: 10px;
-      width: 220px;
-      padding: 14px;
-      border-radius: 14px;
-      border: 1px solid var(--iron-line);
-      background: var(--iron-2);
-      color: var(--cream)
-    }
-
-    #pin:focus {
-      outline: 2px solid var(--gold)
-    }
-
-    #gate .btn {
-      width: 220px;
-      text-align: center
-    }
-
-    #gate .err {
-      color: var(--danger);
-      font-size: .85rem;
-      height: 1em
-    }
-  </style>
+  /* PIN gate */
+  #gate{position:fixed;inset:0;background:var(--iron);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:24px;z-index:10}
+  #gate h1{font-family:"Mitr";font-weight:500;font-size:1.2rem}
+  #pin{font-family:"Mitr";font-size:1.6rem;text-align:center;letter-spacing:10px;width:220px;padding:14px;border-radius:14px;border:1px solid var(--iron-line);background:var(--iron-2);color:var(--cream)}
+  #pin:focus{outline:2px solid var(--gold)}
+  #gate .btn{width:220px;text-align:center}
+  #gate .err{color:var(--danger);font-size:.85rem;height:1em}
+</style>
 </head>
-
 <body>
-  <div id="gate">
-    <h1>Staff</h1>
-    <input id="pin" inputmode="numeric" placeholder="PIN" autocomplete="off" />
-    <div class="err" id="err"></div>
-    <button class="btn" id="enter">Enter</button>
-  </div>
+<div id="gate">
+  <h1>Staff</h1>
+  <input id="pin" inputmode="numeric" placeholder="PIN" autocomplete="off" />
+  <div class="err" id="err"></div>
+  <button class="btn" id="enter">Enter</button>
+</div>
 
-  <div class="wrap" id="app" hidden>
-    <header>
-      <div class="brand">Coconut Corner<small>Staff</small></div>
-      <div class="count" id="count">0</div>
-    </header>
+<div class="wrap" id="app" hidden>
+  <header>
+    <div class="brand">Coconut Corner<small>Staff</small></div>
+    <div class="count" id="count">0</div>
+  </header>
 
-    <h2>Making</h2>
-    <div id="making"></div>
-    <div class="empty" id="making-empty" hidden>No orders in the pan</div>
+  <h2>Making</h2>
+  <div id="making"></div>
+  <div class="empty" id="making-empty" hidden>No orders in the pan</div>
 
-    <h2>Ready</h2>
-    <div id="ready"></div>
-    <div class="empty" id="ready-empty" hidden>Nothing ready yet</div>
-  </div>
+  <h2>Ready</h2>
+  <div id="ready"></div>
+  <div class="empty" id="ready-empty" hidden>Nothing ready yet</div>
+</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script>
-    // ─── Fill in your details ───────────────────────────────────
-    const SUPABASE_URL = "https://kbkrqqvxbligybvgtyxx.supabase.co";
-    const SUPABASE_ANON = "sb_publishable_zmng-XP1Yfiox8ZPW5Wfsg_U1lQK2x3";
-    const STAFF_PIN = "2468";   // change this. Weak gate — see the note in chat.
-    // ────────────────────────────────────────────────────────────
+<!-- transient "picked up — undo" bar -->
+<div id="undo" hidden>
+  <span id="undo-text"></span>
+  <button id="undo-btn">Undo</button>
+  <div id="undo-bar"></div>
+</div>
 
-    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // ─── Fill in your details ───────────────────────────────────
+  const SUPABASE_URL = "https://kbkrqqvxbligybvgtyxx.supabase.co";
+  const SUPABASE_ANON = "sb_publishable_zmng-XP1Yfiox8ZPW5Wfsg_U1lQK2x3";
+  const STAFF_PIN     = "2468";   // change this. Weak gate — see the note in chat.
+  // ────────────────────────────────────────────────────────────
 
-    // PIN gate
-    const gate = document.getElementById("gate");
-    document.getElementById("enter").onclick = tryPin;
-    document.getElementById("pin").addEventListener("keydown", e => { if (e.key === "Enter") tryPin(); });
-    function tryPin() {
-      if (document.getElementById("pin").value === STAFF_PIN) {
-        gate.remove(); document.getElementById("app").hidden = false; start();
-      } else {
-        document.getElementById("err").textContent = "Wrong PIN";
-      }
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // PIN gate
+  const gate = document.getElementById("gate");
+  document.getElementById("enter").onclick = tryPin;
+  document.getElementById("pin").addEventListener("keydown", e=>{ if(e.key==="Enter") tryPin(); });
+  function tryPin(){
+    if(document.getElementById("pin").value === STAFF_PIN){
+      gate.remove(); document.getElementById("app").hidden = false; start();
+    } else {
+      document.getElementById("err").textContent = "Wrong PIN";
     }
+  }
 
-    const makingEl = document.getElementById("making");
-    const readyEl = document.getElementById("ready");
+  const makingEl = document.getElementById("making");
+  const readyEl  = document.getElementById("ready");
 
-    function waited(created) {
-      const m = Math.floor((Date.now() - new Date(created)) / 60000);
-      return m < 1 ? "just now" : `waiting ${m}m`;
-    }
+  function waited(created){
+    const m = Math.floor((Date.now()-new Date(created))/60000);
+    return m<1 ? "just now" : `waiting ${m}m`;
+  }
 
-    // Line up the checked-state array with the items array (missing = not done).
-    function normChecked(row) {
-      const n = Array.isArray(row.items) ? row.items.length : 0;
-      const c = Array.isArray(row.checked) ? row.checked.slice(0, n) : [];
-      while (c.length < n) c.push(false);
-      return c;
-    }
+  // Line up the checked-state array with the items array (missing = not done).
+  function normChecked(row){
+    const n = Array.isArray(row.items) ? row.items.length : 0;
+    const c = Array.isArray(row.checked) ? row.checked.slice(0, n) : [];
+    while(c.length < n) c.push(false);
+    return c;
+  }
 
-    function writeProgress(el, row) {
-      const n = Array.isArray(row.items) ? row.items.length : 0;
-      if (!n) { el.textContent = ""; el.classList.remove("all"); return; }
-      const done = normChecked(row).filter(Boolean).length;
-      el.textContent = `${done}/${n} in`;
-      el.classList.toggle("all", done === n);
-    }
+  function writeProgress(el, row){
+    const n = Array.isArray(row.items) ? row.items.length : 0;
+    if(!n){ el.textContent = ""; el.classList.remove("all"); return; }
+    const done = normChecked(row).filter(Boolean).length;
+    el.textContent = `${done}/${n} in`;
+    el.classList.toggle("all", done === n);
+  }
 
-    // Tap an item to mark it added; write-through to the DB so every device syncs.
-    async function toggleItem(row, idx, liEl) {
-      const checked = normChecked(row);
-      checked[idx] = !checked[idx];
-      row.checked = checked;                                  // keep local copy fresh
-      liEl.classList.toggle("done", checked[idx]);            // optimistic
-      const prog = liEl.closest(".row")?.querySelector(".prog");
-      if (prog) writeProgress(prog, row);
-      const { error } = await sb.from("orders").update({ checked }).eq("id", row.id);
-      if (error) liEl.classList.toggle("done", !checked[idx]); // revert if it didn't save
-    }
+  // Tap an item to mark it added; write-through to the DB so every device syncs.
+  async function toggleItem(row, idx, liEl){
+    const checked = normChecked(row);
+    checked[idx] = !checked[idx];
+    row.checked = checked;                                  // keep local copy fresh
+    liEl.classList.toggle("done", checked[idx]);            // optimistic
+    const prog = liEl.closest(".row")?.querySelector(".prog");
+    if(prog) writeProgress(prog, row);
+    const { error } = await sb.from("orders").update({ checked }).eq("id", row.id);
+    if(error) liEl.classList.toggle("done", !checked[idx]); // revert if it didn't save
+  }
 
-    // The order contents, as a tick-off checklist (interactive only while making).
-    function itemsBlock(row, interactive) {
-      const items = Array.isArray(row.items) ? row.items : [];
-      const ul = document.createElement("ul");
-      if (!items.length) {
-        ul.className = "items none";
-        const li = document.createElement("li"); li.textContent = "—";
-        ul.appendChild(li);
-        return ul;
-      }
-      ul.className = "items" + (interactive ? "" : " readonly");
-      const checked = normChecked(row);
-      items.forEach((it, i) => {
-        const li = document.createElement("li");
-        if (checked[i]) li.classList.add("done");
-        const box = document.createElement("span"); box.className = "box"; box.textContent = "✓";
-        const q = document.createElement("span"); q.className = "q"; q.textContent = (it.qty ?? 1) + "×";
-        const txt = document.createElement("span"); txt.className = "txt"; txt.textContent = " " + (it.name ?? "Item");
-        li.append(box, q, txt);
-        if (interactive) li.onclick = () => toggleItem(row, i, li);
-        ul.appendChild(li);
-      });
+  // The order contents, as a tick-off checklist (interactive only while making).
+  function itemsBlock(row, interactive){
+    const items = Array.isArray(row.items) ? row.items : [];
+    const ul = document.createElement("ul");
+    if(!items.length){
+      ul.className = "items none";
+      const li = document.createElement("li"); li.textContent = "—";
+      ul.appendChild(li);
       return ul;
     }
+    ul.className = "items" + (interactive ? "" : " readonly");
+    const checked = normChecked(row);
+    items.forEach((it, i)=>{
+      const li = document.createElement("li");
+      if(checked[i]) li.classList.add("done");
+      const box = document.createElement("span"); box.className="box"; box.textContent="✓";
+      const q = document.createElement("span"); q.className="q"; q.textContent=(it.qty ?? 1)+"×";
+      const txt = document.createElement("span"); txt.className="txt"; txt.textContent=" "+(it.name ?? "Item");
+      li.append(box, q, txt);
+      if(interactive) li.onclick = ()=> toggleItem(row, i, li);
+      ul.appendChild(li);
+    });
+    return ul;
+  }
 
-    async function setStatus(id, status) {
-      const patch = { status };
-      if (status === "ready") patch.ready_at = new Date().toISOString();
-      await sb.from("orders").update(patch).eq("id", id);
-      load(); // optimistic-ish; realtime will also refresh
-    }
+  async function setStatus(id, status){
+    const patch = { status };
+    if(status==="ready")     patch.ready_at = new Date().toISOString();
+    if(status==="preparing") patch.ready_at = null;   // sent back to the pan
+    await sb.from("orders").update(patch).eq("id", id);
+    load(); // optimistic-ish; realtime will also refresh
+  }
 
-    function render(el, rows, kind, emptyId) {
-      el.innerHTML = "";
-      rows.forEach(r => {
-        const row = document.createElement("div");
-        row.className = "row" + (kind === "ready" ? " done" : "");
+  // ── Undo for an accidental "Picked up" ────────────────────────────
+  // The pickup writes to the DB immediately (so every device agrees), and this
+  // bar hangs around ~10s offering to flip it back to Ready.
+  let undoTimer = null;
+  const undoEl = document.getElementById("undo");
+  function showUndo(id, ticket){
+    clearTimeout(undoTimer);
+    undoEl.dataset.id = id;
+    document.getElementById("undo-text").textContent = `Ticket ${ticket} picked up`;
+    undoEl.hidden = false;
+    undoEl.classList.remove("run"); void undoEl.offsetWidth; // restart the countdown bar
+    undoEl.classList.add("run");
+    undoTimer = setTimeout(hideUndo, 10000);
+  }
+  function hideUndo(){
+    clearTimeout(undoTimer);
+    undoEl.classList.remove("run");
+    undoEl.hidden = true;
+    delete undoEl.dataset.id;
+  }
+  async function undoPickup(){
+    const id = undoEl.dataset.id;
+    hideUndo();
+    if(id) await setStatus(id, "ready");   // back into the Ready list
+  }
+  document.getElementById("undo-btn").onclick = undoPickup;
 
-        const tk = document.createElement("div"); tk.className = "tk"; tk.textContent = r.ticket;
+  function render(el, rows, kind, emptyId){
+    el.innerHTML = "";
+    rows.forEach(r=>{
+      const row = document.createElement("div");
+      row.className = "row" + (kind==="ready" ? " done" : "");
 
-        const meta = document.createElement("div"); meta.className = "meta";
-        meta.appendChild(itemsBlock(r, kind === "making"));   // tap-to-check only while making
-        const wait = document.createElement("div"); wait.className = "wait";
-        const prog = document.createElement("span"); prog.className = "prog"; writeProgress(prog, r);
-        if (prog.textContent) { wait.append(prog, document.createTextNode(" · ")); }
-        wait.append(document.createTextNode(kind === "ready" ? "ready" : waited(r.created_at)));
-        meta.appendChild(wait);
+      const tk = document.createElement("div"); tk.className="tk"; tk.textContent=r.ticket;
 
+      const meta = document.createElement("div"); meta.className="meta";
+      meta.appendChild(itemsBlock(r, kind==="making"));   // tap-to-check only while making
+      const wait = document.createElement("div"); wait.className="wait";
+      const prog = document.createElement("span"); prog.className="prog"; writeProgress(prog, r);
+      if(prog.textContent){ wait.append(prog, document.createTextNode(" · ")); }
+      wait.append(document.createTextNode(kind==="ready" ? "ready" : waited(r.created_at)));
+      meta.appendChild(wait);
+
+      if(kind==="making"){
         const btn = document.createElement("button");
-        if (kind === "making") {
-          btn.className = "btn"; btn.textContent = "Ready ✓";
-          btn.onclick = () => setStatus(r.id, "ready");
-        } else {
-          btn.className = "btn ghost"; btn.textContent = "Picked up";
-          btn.onclick = () => setStatus(r.id, "picked_up");
-        }
+        btn.className="btn"; btn.textContent="Ready ✓";
+        btn.onclick=()=>setStatus(r.id,"ready");
         row.append(tk, meta, btn);
-        el.appendChild(row);
-      });
-      document.getElementById(emptyId).hidden = rows.length > 0;
-    }
+      } else {
+        // Ready row: small "undo" to send it back to Making if marked by mistake,
+        // plus the usual Picked up. Kept visually distinct to avoid mis-taps.
+        const actions = document.createElement("div"); actions.className="actions";
+        const back = document.createElement("button");
+        back.className="btn back"; back.textContent="↩";
+        back.setAttribute("aria-label","Back to making"); back.title="Back to making";
+        back.onclick=()=>setStatus(r.id,"preparing");
+        const picked = document.createElement("button");
+        picked.className="btn ghost"; picked.textContent="Picked up";
+        picked.onclick=()=>{ setStatus(r.id,"picked_up"); showUndo(r.id, r.ticket); };
+        actions.append(back, picked);
+        row.append(tk, meta, actions);
+      }
+      el.appendChild(row);
+    });
+    document.getElementById(emptyId).hidden = rows.length>0;
+  }
 
-    async function load() {
-      const { data, error } = await sb
-        .from("orders")
-        .select("id,ticket,status,created_at,items,checked")
-        .neq("status", "picked_up")
-        .gt("created_at", new Date(Date.now() - 6 * 3600 * 1000).toISOString())
-        .order("created_at", { ascending: true });
-      if (error) return;
-      const making = data.filter(r => r.status === "preparing");
-      const ready = data.filter(r => r.status === "ready");
-      document.getElementById("count").textContent = making.length;
-      render(makingEl, making, "making", "making-empty");
-      render(readyEl, ready, "ready", "ready-empty");
-    }
+  async function load(){
+    const { data, error } = await sb
+      .from("orders")
+      .select("id,ticket,status,created_at,items,checked")
+      .neq("status","picked_up")
+      .gt("created_at", new Date(Date.now()-6*3600*1000).toISOString())
+      .order("created_at",{ascending:true});
+    if(error) return;
+    const making = data.filter(r=>r.status==="preparing");
+    const ready  = data.filter(r=>r.status==="ready");
+    document.getElementById("count").textContent = making.length;
+    render(makingEl, making, "making", "making-empty");
+    render(readyEl,  ready,  "ready",  "ready-empty");
+  }
 
-    function start() {
-      sb.channel("staff")
-        .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, load)
-        .subscribe();
-      load();
-      setInterval(load, 30000); // refresh wait-times
-    }
-  </script>
+  function start(){
+    sb.channel("staff")
+      .on("postgres_changes",{event:"*",schema:"public",table:"orders"}, load)
+      .subscribe();
+    load();
+    setInterval(load, 30000); // refresh wait-times
+  }
+</script>
 </body>
-
 </html>
