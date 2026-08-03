@@ -116,36 +116,97 @@
       min-width: 0
     }
 
-    /* the new bit: what the customer ordered */
+    /* order contents as a tick-off checklist */
     .items {
       list-style: none;
       display: flex;
       flex-direction: column;
-      gap: 3px;
-      margin-bottom: 5px
+      gap: 2px;
+      margin-bottom: 6px
     }
 
     .items li {
+      display: flex;
+      align-items: center;
+      gap: 9px;
       font-size: 1rem;
-      line-height: 1.25;
+      line-height: 1.2;
       color: var(--cream);
-      font-weight: 600
+      font-weight: 600;
+      padding: 7px 8px;
+      border-radius: 9px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .items li:active {
+      background: rgba(255, 255, 255, .05)
+    }
+
+    .items .box {
+      flex: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      border: 2px solid var(--sage-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .9rem;
+      color: transparent;
+      transition: background .12s, border-color .12s;
+    }
+
+    .items li.done .box {
+      background: var(--pandan);
+      border-color: var(--pandan);
+      color: #0E1A12
+    }
+
+    .items li.done .txt {
+      color: var(--sage-dim);
+      text-decoration: line-through
+    }
+
+    .items li.done .q {
+      color: var(--sage-dim)
     }
 
     .items .q {
       color: var(--gold);
-      margin-right: 2px
+      margin-right: 1px
     }
 
     .items.none {
       color: var(--sage-dim);
       font-weight: 400;
-      font-size: .9rem
+      font-size: .9rem;
+      padding-left: 2px
+    }
+
+    /* ready rows: show the list as a plain confirmation, no tapping */
+    .items.readonly li {
+      cursor: default;
+      padding: 2px 0
+    }
+
+    .items.readonly .box {
+      display: none
     }
 
     .wait {
       font-size: .78rem;
       color: var(--sage-dim)
+    }
+
+    .prog {
+      color: var(--gold);
+      font-weight: 600
+    }
+
+    .prog.all {
+      color: var(--pandan)
     }
 
     .btn {
@@ -299,22 +360,54 @@
       return m < 1 ? "just now" : `waiting ${m}m`;
     }
 
-    // Build the "what did they order" block for a row.
-    function itemsBlock(items) {
-      const list = Array.isArray(items) ? items : [];
+    // Line up the checked-state array with the items array (missing = not done).
+    function normChecked(row) {
+      const n = Array.isArray(row.items) ? row.items.length : 0;
+      const c = Array.isArray(row.checked) ? row.checked.slice(0, n) : [];
+      while (c.length < n) c.push(false);
+      return c;
+    }
+
+    function writeProgress(el, row) {
+      const n = Array.isArray(row.items) ? row.items.length : 0;
+      if (!n) { el.textContent = ""; el.classList.remove("all"); return; }
+      const done = normChecked(row).filter(Boolean).length;
+      el.textContent = `${done}/${n} in`;
+      el.classList.toggle("all", done === n);
+    }
+
+    // Tap an item to mark it added; write-through to the DB so every device syncs.
+    async function toggleItem(row, idx, liEl) {
+      const checked = normChecked(row);
+      checked[idx] = !checked[idx];
+      row.checked = checked;                                  // keep local copy fresh
+      liEl.classList.toggle("done", checked[idx]);            // optimistic
+      const prog = liEl.closest(".row")?.querySelector(".prog");
+      if (prog) writeProgress(prog, row);
+      const { error } = await sb.from("orders").update({ checked }).eq("id", row.id);
+      if (error) liEl.classList.toggle("done", !checked[idx]); // revert if it didn't save
+    }
+
+    // The order contents, as a tick-off checklist (interactive only while making).
+    function itemsBlock(row, interactive) {
+      const items = Array.isArray(row.items) ? row.items : [];
       const ul = document.createElement("ul");
-      if (!list.length) {
+      if (!items.length) {
         ul.className = "items none";
         const li = document.createElement("li"); li.textContent = "—";
         ul.appendChild(li);
         return ul;
       }
-      ul.className = "items";
-      list.forEach(it => {
+      ul.className = "items" + (interactive ? "" : " readonly");
+      const checked = normChecked(row);
+      items.forEach((it, i) => {
         const li = document.createElement("li");
-        const q = document.createElement("span");
-        q.className = "q"; q.textContent = (it.qty ?? 1) + "×";
-        li.append(q, document.createTextNode(" " + (it.name ?? "Item")));
+        if (checked[i]) li.classList.add("done");
+        const box = document.createElement("span"); box.className = "box"; box.textContent = "✓";
+        const q = document.createElement("span"); q.className = "q"; q.textContent = (it.qty ?? 1) + "×";
+        const txt = document.createElement("span"); txt.className = "txt"; txt.textContent = " " + (it.name ?? "Item");
+        li.append(box, q, txt);
+        if (interactive) li.onclick = () => toggleItem(row, i, li);
         ul.appendChild(li);
       });
       return ul;
@@ -336,9 +429,11 @@
         const tk = document.createElement("div"); tk.className = "tk"; tk.textContent = r.ticket;
 
         const meta = document.createElement("div"); meta.className = "meta";
-        meta.appendChild(itemsBlock(r.items));
+        meta.appendChild(itemsBlock(r, kind === "making"));   // tap-to-check only while making
         const wait = document.createElement("div"); wait.className = "wait";
-        wait.textContent = kind === "ready" ? "ready" : waited(r.created_at);
+        const prog = document.createElement("span"); prog.className = "prog"; writeProgress(prog, r);
+        if (prog.textContent) { wait.append(prog, document.createTextNode(" · ")); }
+        wait.append(document.createTextNode(kind === "ready" ? "ready" : waited(r.created_at)));
         meta.appendChild(wait);
 
         const btn = document.createElement("button");
@@ -358,7 +453,7 @@
     async function load() {
       const { data, error } = await sb
         .from("orders")
-        .select("id,ticket,status,created_at,items")
+        .select("id,ticket,status,created_at,items,checked")
         .neq("status", "picked_up")
         .gt("created_at", new Date(Date.now() - 6 * 3600 * 1000).toISOString())
         .order("created_at", { ascending: true });
