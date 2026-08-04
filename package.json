@@ -4,7 +4,7 @@
     "private": true,
     "scripts": {
         "dev": "supabase functions serve",
-        "deploy": "supabase functions deploy",
+        "deploy": "supabase functions deploy"
     },
     "devDependencies": {
         "supabase": "^2.111.0"
