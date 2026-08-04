@@ -33,11 +33,17 @@ Order board for Coconut Corner, a small food stall. Three independent pieces, on
 
 ```
 Square order.created/.updated  →  webhook upsert (status defaults 'preparing')
-                               →  staff taps "Ready ✓"    → status='ready', ready_at
+                               →  staff taps "Ready ✓"    → status='ready', ready_at=now
                                →  staff taps "Picked up"  → status='picked_up'
+                    ↩ back to making  ← status='preparing', ready_at=null
+                    ↩ Undo (10s bar)  ← status='ready'
 ```
 
-`picked_up` rows are filtered out of both UIs and never displayed again. The webhook reuses that as a *hide* mechanism: a CANCELED order, or one carrying a `returns`/`refunds` block (Square spawns a whole new order for every refund/return/exchange), gets force-set to `picked_up` instead of being upserted. So `picked_up` means "off the board," not necessarily "collected."
+Every transition is a straight `update` on `orders` from staff.html — there is no state machine and nothing rejects a backwards move. Both reversals matter when reasoning about the table: **↩** on a Ready row sends it back to Making and **nulls `ready_at`**, and the transient undo bar after a pickup flips `picked_up` back to `ready` within ~10s. So `ready_at` is not monotonic and a row can leave and re-enter the UI.
+
+The undo bar holds only the row id in a DOM `dataset` — a page reload during that window drops the offer, and the row is then only reachable via SQL.
+
+`picked_up` rows are filtered out of both UIs. The webhook reuses that as a *hide* mechanism: a CANCELED order, or one carrying a `returns`/`refunds` block (Square spawns a whole new order for every refund/return/exchange), gets force-set to `picked_up` instead of being upserted. So `picked_up` means "off the board," not necessarily "collected."
 
 Square's `COMPLETED` state only means *paid* — the webhook deliberately does **not** auto-mark an order ready. Staff do that.
 
@@ -49,7 +55,7 @@ Square's `COMPLETED` state only means *paid* — the webhook deliberately does *
 | `square_order_id` | text **unique** — the webhook's upsert conflict target, de-dupes repeat fires |
 | `ticket` | text, the big number/code on both screens; Square's `ticket_name`, or the last 4 of the order id |
 | `status` | `preparing` \| `ready` \| `picked_up` (CHECK constraint) |
-| `created_at`, `ready_at` | timestamptz; `ready_at` written by staff.html |
+| `created_at`, `ready_at` | timestamptz; `ready_at` set by staff.html on "Ready ✓" and **cleared** on ↩ back-to-making |
 | `items` | jsonb array of `{name, qty}`; `name` is pre-composed by the webhook as `Item (variation) +mods — note` |
 | `checked` | jsonb array of booleans, **index-aligned with `items`** |
 
