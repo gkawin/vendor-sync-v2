@@ -21,7 +21,9 @@ supabase secrets set SQUARE_SIGNATURE_KEY=... SQUARE_NOTIFICATION_URL=... SQUARE
 
 `SQUARE_ENV` defaults to `production` (set `sandbox` to hit Square's sandbox API). `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase — don't set them. There is no `supabase/config.toml`, so CLI commands need a linked project or `--project-ref`.
 
-**Migrations are a record, not a pipeline.** Nothing runs [supabase/migrations/](supabase/migrations/) — the init file says to paste it into Supabase Studio's SQL editor, and the two `alter table` files were applied the same way. Adding a column means writing the migration file *and* running it by hand.
+**Migrations are a record, not a pipeline.** Nothing runs [supabase/migrations/](supabase/migrations/) — the init file says to paste it into Supabase Studio's SQL editor, and the later `alter table` files were applied the same way. Adding a column means writing the migration file *and* running it by hand.
+
+[20260804001-cashier-accept.sql](supabase/migrations/20260804001-cashier-accept.sql) is deliberately split into a PART A (additive, safe any time) and a one-line PART B that flips `status`'s DEFAULT. PART B and the webhook deploy are a single cutover — its header spells out the order, and doing it mid-service puts blank tokens on the customer board.
 
 ## Architecture
 
@@ -32,18 +34,22 @@ Order board for Coconut Corner, a small food stall. Three independent pieces, on
 **One webhook.** [supabase/functions/square-webhook/index.ts](supabase/functions/square-webhook/index.ts) is a Deno edge function: it verifies Square's HMAC signature, re-fetches the order from the Orders API to get `ticket_name` and line items, and upserts on `square_order_id`. Neither HTML page ever inserts an order.
 
 ```
-Square order.created/.updated  →  webhook upsert (status defaults 'preparing')
+Square order.created/.updated  →  webhook upsert (status takes DEFAULT 'new')
+                               →  cashier types the card no. + "Accept"
+                                        → ticket='12', status='preparing', accepted_at=now
                                →  staff taps "Ready ✓"    → status='ready', ready_at=now
                                →  staff taps "Picked up"  → status='picked_up'
                     ↩ back to making  ← status='preparing', ready_at=null
                     ↩ Undo (10s bar)  ← status='ready'
 ```
 
+**The cashier owns the number, Square doesn't.** Customers get a physical queue card (1–100) at the counter, so the order sits in staff.html's *Incoming* list until someone types the number of the card they just handed over. Square's `ticket_name` survives only as `square_ticket`, which prefills that box — the webhook never writes `ticket` at all. **`status` has no writer either**: its column DEFAULT of `'new'` is the entire mechanism routing orders through the cashier, precisely because the upsert omits the column. Re-running the init migration would reset that default and orders would start skipping the cashier.
+
 Every transition is a straight `update` on `orders` from staff.html — there is no state machine and nothing rejects a backwards move. Both reversals matter when reasoning about the table: **↩** on a Ready row sends it back to Making and **nulls `ready_at`**, and the transient undo bar after a pickup flips `picked_up` back to `ready` within ~10s. So `ready_at` is not monotonic and a row can leave and re-enter the UI.
 
 The undo bar holds only the row id in a DOM `dataset` — a page reload during that window drops the offer, and the row is then only reachable via SQL.
 
-`picked_up` rows are filtered out of both UIs. The webhook reuses that as a *hide* mechanism: a CANCELED order, or one carrying a `returns`/`refunds` block (Square spawns a whole new order for every refund/return/exchange), gets force-set to `picked_up` instead of being upserted. So `picked_up` means "off the board," not necessarily "collected."
+Both pages query by an explicit `.in("status", …)` allow-list rather than excluding `picked_up`, because `new` has to be hidden too: board.html asks for `preparing`/`ready` only (an unaccepted order has no number to print), staff.html adds `new` for the Incoming list. `picked_up` is the universal *hide* mechanism, and the webhook reuses it: a CANCELED order, or one carrying a `returns`/`refunds` block (Square spawns a whole new order for every refund/return/exchange), gets force-set to `picked_up` instead of being upserted — which also frees its queue card. So `picked_up` means "off the board," not necessarily "collected."
 
 Square's `COMPLETED` state only means *paid* — the webhook deliberately does **not** auto-mark an order ready. Staff do that.
 
@@ -53,22 +59,29 @@ Square's `COMPLETED` state only means *paid* — the webhook deliberately does *
 |---|---|
 | `id` | uuid, primary key |
 | `square_order_id` | text **unique** — the webhook's upsert conflict target, de-dupes repeat fires |
-| `ticket` | text, the big number/code on both screens; Square's `ticket_name`, or the last 4 of the order id |
-| `status` | `preparing` \| `ready` \| `picked_up` (CHECK constraint) |
-| `created_at`, `ready_at` | timestamptz; `ready_at` set by staff.html on "Ready ✓" and **cleared** on ↩ back-to-making |
+| `ticket` | text, **nullable** — the physical queue-card number the cashier typed, and the big number on both screens. Null until Accept. Written by staff.html *only* |
+| `square_ticket` | text, Square's `ticket_name`; a prefill hint for the cashier's box and nothing more |
+| `status` | `new` \| `preparing` \| `ready` \| `picked_up` (CHECK constraint); **DEFAULT `new`** |
+| `created_at`, `ready_at`, `accepted_at` | timestamptz; `ready_at` set on "Ready ✓" and **cleared** on ↩ back-to-making; `accepted_at` set on Accept |
 | `items` | jsonb array of `{name, qty}`; `name` is pre-composed by the webhook as `Item (variation) +mods — note` |
 | `checked` | jsonb array of booleans, **index-aligned with `items`** |
 
-The upsert writes only `square_order_id`, `ticket`, and `items` — `status`, `created_at`, `ready_at`, and `checked` are left alone, so anything staff tapped survives a later `order.updated`.
+The upsert writes only `square_order_id`, `square_ticket`, and `items`. Everything else — `status`, `ticket`, `created_at`, `ready_at`, `accepted_at`, `checked` — is left alone, so the card number and anything staff tapped survive a later `order.updated`.
 
-**Refresh — the two pages differ.** staff.html subscribes to `postgres_changes` on `public.orders` (`event: "*"`) and responds to any event by re-running `load()` — a full re-query and full re-render; the payload is ignored. A 30s `setInterval` backstops missed events and refreshes wait-time labels. It doesn't subscribe at all until the PIN is accepted (`start()`). board.html has no subscription: it polls `load()` every `POLL_MS` (5s), guarded by an `inFlight` flag so a slow query can't stack up. PostgREST can't hold a request open, so that is a fixed interval, not a server-held long poll. Adding a column the UI needs means updating the `.select()` list in the relevant file.
+`orders_active_ticket_idx` is a **partial unique index** on `ticket` where `status in ('new','preparing','ready')`: one physical card, one active order. `'new'` rows have `ticket = null` and Postgres treats NULLs as distinct, so unaccepted orders never collide.
+
+**Refresh — the two pages differ.** staff.html subscribes to `postgres_changes` on `public.orders` (`event: "*"`) and responds to any event by re-running `load()` — a full re-query and full re-render; the payload is ignored. A 30s `setInterval` backstops missed events and refreshes wait-time labels. It doesn't subscribe at all until the PIN is accepted (`start()`). board.html has no subscription: it polls `load()` every `POLL_MS` (3s), guarded by an `inFlight` flag so a slow query can't stack up. PostgREST can't hold a request open, so that is a fixed interval, not a server-held long poll. Adding a column the UI needs means updating the `.select()` list in the relevant file.
+
+That full re-render is why `renderIncoming()` snapshots each card-number `<input>` (value *and* caret) before wiping the list and restores it afterward, and why conflict messages live in a module-level `conflicts` map instead of the DOM. Without both, an unrelated realtime event mid-typing would eat what the cashier was entering.
 
 ## Gotchas
 
-- **Time-window filters.** `load()` only fetches rows newer than a cutoff — 3h on the board, 6h on staff. An order left un-picked-up past that window silently disappears from the screen while still sitting in the table.
+- **Time-window filters.** `load()` only fetches rows newer than a cutoff — 3h on the board, 6h on staff. An order left un-picked-up past that window silently disappears from the screen while still sitting in the table — *and keeps holding its queue card*, since the unique index has no time bound. That combination is why an accept that hits a duplicate looks the offender up with `findHolder()`, which queries by `ticket` with **no time filter**, and offers "Release card" (a plain `status='picked_up'`). It is the only in-app way to reclaim a number stranded on an invisible row.
+- **The unique index can reject writes staff.html otherwise treats as infallible.** `setStatus()` ignores its error, so undoing a pickup within the 10s window fails silently if that card was re-issued in the meantime — the row just doesn't come back on the next `load()`. `↩` back-to-making is safe (the row keeps its own number, and both statuses are inside the index predicate).
+- **Normalize card numbers before writing.** `normCard()` validates 1–100 and returns `String(Number(s))`, so `"07"` and `"7"` can't become two live cards — the index compares text and would happily allow both.
 - **`checked` alignment is fragile by construction.** `normChecked()` truncates/pads `checked` to `items.length`, so mismatched lengths degrade quietly rather than erroring. The live hazard: an `order.updated` fire rewrites `items` wholesale but leaves `checked` untouched, so editing an order in Square after staff have started ticking re-points existing checkmarks at the wrong items.
 - **Item taps write through immediately.** `toggleItem()` updates the DOM optimistically, PATCHes the row, and reverts the class only if the write fails — so every device stays in sync, but a tap is a database round-trip.
-- **Two write paths with different privileges.** The webhook uses the **service role** key (bypasses RLS entirely). staff.html updates `status`, `ready_at`, and `checked` with the **anon** key, so the `anon can update orders` policy in the init migration must keep working — anything that tightens RLS has to preserve that path or move those writes into a function. (The `anon can insert orders` policy alongside it is vestigial now that only the webhook inserts.)
+- **Two write paths with different privileges.** The webhook uses the **service role** key (bypasses RLS entirely). staff.html updates `status`, `ticket`, `ready_at`, `accepted_at`, and `checked` with the **anon** key, so the `anon can update orders` policy in the init migration must keep working — anything that tightens RLS has to preserve that path or move those writes into a function. (The `anon can insert orders` policy alongside it is vestigial now that only the webhook inserts.)
 - **Everything here is publicly served.** `SUPABASE_URL`, `SUPABASE_ANON`, and `STAFF_PIN` are constants at the top of each `<script>`; the PIN is a client-side speed bump, not access control (the code says so). Because Pages uploads the repo root, the webhook source ships publicly too — it reads every secret from `Deno.env`, and it must stay that way.
 - **Signature verification is URL-bound.** The HMAC covers `SQUARE_NOTIFICATION_URL + rawBody`, so that secret must match the URL registered in Square *exactly* or every delivery 403s.
 

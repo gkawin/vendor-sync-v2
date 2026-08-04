@@ -28,6 +28,12 @@
   .count{font-family:"Mitr";font-weight:600;font-size:1.6rem;color:var(--gold)}
 
   h2{font-family:"Mitr";font-weight:500;font-size:.8rem;letter-spacing:2px;text-transform:uppercase;color:var(--sage-dim);margin:22px 2px 12px}
+  h2 .badge{
+    display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
+    background:var(--gold);color:#20140A;font-weight:600;font-size:.75rem;
+    letter-spacing:0;vertical-align:middle;
+  }
+  h2 .badge[hidden]{display:none}   /* the display above would beat [hidden] otherwise */
 
   .row{
     display:flex;align-items:center;gap:14px;
@@ -86,6 +92,25 @@
   .row.done{background:transparent;border-style:dashed}
   .row.done .tk{color:var(--gold)}
 
+  /* Incoming: straight from Square, waiting for a cashier to hand over a card.
+     No .tk — the card-number box stands in for it. */
+  .row.new{flex-wrap:wrap;border-color:var(--gold-deep)}
+  .accept{display:flex;align-items:center;gap:10px;flex:none;align-self:center}
+  .cardno{
+    font-family:"Mitr";font-weight:600;font-size:1.5rem;text-align:center;color:var(--cream);
+    width:4.5ch;padding:11px 6px;border-radius:12px;
+    border:1px solid var(--iron-line);background:var(--iron);
+  }
+  .cardno:focus{outline:2px solid var(--gold);border-color:transparent}
+  .cardno.bad{border-color:var(--danger);background:rgba(196,85,60,.12)}
+  .conflict{
+    flex-basis:100%;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    margin-top:12px;padding-top:11px;border-top:1px solid var(--iron-line);
+    color:var(--danger);font-size:.85rem;line-height:1.35;
+  }
+  .conflict[hidden]{display:none}
+  .conflict .btn{font-size:.85rem;padding:9px 14px}
+
   .empty{color:var(--sage-dim);font-size:.9rem;padding:4px}
 
   /* transient undo bar after Picked up */
@@ -135,6 +160,10 @@
     <div class="count" id="count">0</div>
   </header>
 
+  <h2>Incoming <span class="badge" id="incoming-count" hidden>0</span></h2>
+  <div id="incoming"></div>
+  <div class="empty" id="incoming-empty" hidden>Nothing waiting for a card</div>
+
   <h2>Making</h2>
   <div id="making"></div>
   <div class="empty" id="making-empty" hidden>No orders in the pan</div>
@@ -173,8 +202,9 @@
     }
   }
 
-  const makingEl = document.getElementById("making");
-  const readyEl  = document.getElementById("ready");
+  const incomingEl = document.getElementById("incoming");
+  const makingEl   = document.getElementById("making");
+  const readyEl    = document.getElementById("ready");
 
   function waited(created){
     const m = Math.floor((Date.now()-new Date(created))/60000);
@@ -232,6 +262,159 @@
       ul.appendChild(li);
     });
     return ul;
+  }
+
+  // ── Queue cards ───────────────────────────────────────────────────
+  // Physical numbered cards, 1–100. A card is "out" for exactly as long as its
+  // number sits on an active row, so the same number can never be handed to two
+  // customers. `orders_active_ticket_idx` enforces that in the database — the
+  // checks here only make the failure legible; they don't guard anything.
+  const CARD_MIN = 1, CARD_MAX = 100;
+
+  // "07" and "7" are the same physical card — store one spelling, or the unique
+  // index happily lets both exist.
+  function normCard(raw){
+    const s = String(raw ?? "").trim();
+    if(!/^\d{1,3}$/.test(s)) return null;
+    const n = Number(s);
+    return (n >= CARD_MIN && n <= CARD_MAX) ? String(n) : null;
+  }
+
+  // Conflicts live outside the DOM: load() re-renders on every realtime event,
+  // and a "that card is still out" message that vanished a second later would
+  // be worse than none.
+  const conflicts = new Map();   // incoming row id → { text, holderId }
+
+  function fillConflict(el, rowId){
+    const c = conflicts.get(rowId);
+    if(!c){ el.hidden = true; el.innerHTML = ""; return; }
+    el.innerHTML = "";
+    const span = document.createElement("span"); span.textContent = c.text;
+    el.appendChild(span);
+    if(c.holderId){
+      const b = document.createElement("button");
+      b.className = "btn ghost"; b.textContent = "Release card";
+      b.onclick = async ()=>{
+        await sb.from("orders").update({ status:"picked_up" }).eq("id", c.holderId);
+        conflicts.delete(rowId);
+        load();
+      };
+      el.appendChild(b);
+    }
+    el.hidden = false;
+  }
+
+  // The number came back as taken. Usually the holder is right there in Making
+  // or Ready — but it can also be a row that aged past load()'s 6h window and
+  // went invisible, which would strand that card number forever. Look it up
+  // with no time filter and offer to write it off.
+  async function findHolder(card){
+    const { data } = await sb
+      .from("orders")
+      .select("id,created_at,accepted_at")
+      .eq("ticket", card)
+      .in("status",["new","preparing","ready"])
+      .limit(1);
+    return (data && data[0]) || null;
+  }
+
+  async function accept(row, input, msgEl){
+    const card = normCard(input.value);
+    if(!card){
+      conflicts.set(row.id, { text:`Card number must be ${CARD_MIN}–${CARD_MAX}` });
+      fillConflict(msgEl, row.id);
+      input.classList.add("bad"); input.focus(); input.select();
+      return;
+    }
+    const { error } = await sb
+      .from("orders")
+      .update({ ticket: card, status: "preparing", accepted_at: new Date().toISOString() })
+      .eq("id", row.id);
+
+    if(!error){
+      conflicts.delete(row.id);
+      load();
+      return;
+    }
+    input.classList.add("bad");
+    if(error.code === "23505"){          // unique index: that card is still out
+      const holder = await findHolder(card);
+      const when = holder
+        ? new Date(holder.accepted_at || holder.created_at)
+            .toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })
+        : null;
+      conflicts.set(row.id, {
+        text: when
+          ? `Card ${card} is still out — handed over at ${when}. Release it only if that customer has gone.`
+          : `Card ${card} is already taken.`,
+        holderId: holder ? holder.id : null,
+      });
+    } else {
+      conflicts.set(row.id, { text:"Couldn't save — check the connection and try again" });
+    }
+    fillConflict(msgEl, row.id);
+  }
+
+  function renderIncoming(rows){
+    // load() fires on every realtime event and every 30s. Snapshot whatever is
+    // half-typed, and where the caret is, so a re-render can't eat it.
+    const typed = {};
+    let focusedId = null, caret = null;
+    incomingEl.querySelectorAll(".cardno").forEach(inp=>{
+      typed[inp.dataset.id] = inp.value;
+      if(document.activeElement === inp){
+        focusedId = inp.dataset.id; caret = inp.selectionStart;
+      }
+    });
+
+    incomingEl.innerHTML = "";
+    rows.forEach(r=>{
+      const row = document.createElement("div");
+      row.className = "row new";
+
+      const meta = document.createElement("div"); meta.className="meta";
+      meta.appendChild(itemsBlock(r, false));   // nothing to tick until it's accepted
+      const wait = document.createElement("div"); wait.className="wait";
+      wait.textContent = waited(r.created_at);
+      meta.appendChild(wait);
+
+      const msg = document.createElement("div"); msg.className="conflict"; msg.hidden = true;
+
+      const input = document.createElement("input");
+      input.className="cardno"; input.type="text"; input.inputMode="numeric";
+      input.maxLength=3; input.placeholder="#"; input.autocomplete="off";
+      input.dataset.id = r.id;
+      input.setAttribute("aria-label","Queue card number");
+      // Square's ticket_name only ever prefills; the cashier types the real card.
+      input.value = (r.id in typed) ? typed[r.id] : (r.square_ticket || r.ticket || "");
+      input.addEventListener("input", ()=>{
+        input.classList.remove("bad");
+        if(conflicts.delete(r.id)) fillConflict(msg, r.id);
+      });
+
+      const btn = document.createElement("button");
+      btn.className="btn"; btn.textContent="Accept";
+      const go = ()=> accept(r, input, msg);
+      btn.onclick = go;
+      input.addEventListener("keydown", e=>{ if(e.key==="Enter") go(); });
+
+      const box = document.createElement("div"); box.className="accept";
+      box.append(input, btn);
+
+      fillConflict(msg, r.id);
+      row.append(meta, box, msg);
+      incomingEl.appendChild(row);
+    });
+
+    if(focusedId){
+      const back = incomingEl.querySelector('.cardno[data-id="'+focusedId+'"]');
+      if(back){ back.focus(); if(caret != null) back.setSelectionRange(caret, caret); }
+    }
+
+    document.getElementById("incoming-empty").hidden = rows.length > 0;
+    const badge = document.getElementById("incoming-count");
+    badge.textContent = rows.length;
+    badge.hidden = rows.length === 0;
   }
 
   async function setStatus(id, status){
@@ -312,14 +495,16 @@
   async function load(){
     const { data, error } = await sb
       .from("orders")
-      .select("id,ticket,status,created_at,items,checked")
-      .neq("status","picked_up")
+      .select("id,ticket,square_ticket,status,created_at,items,checked")
+      .in("status",["new","preparing","ready"])
       .gt("created_at", new Date(Date.now()-6*3600*1000).toISOString())
       .order("created_at",{ascending:true});
     if(error) return;
-    const making = data.filter(r=>r.status==="preparing");
-    const ready  = data.filter(r=>r.status==="ready");
-    document.getElementById("count").textContent = making.length;
+    const incoming = data.filter(r=>r.status==="new");
+    const making   = data.filter(r=>r.status==="preparing");
+    const ready    = data.filter(r=>r.status==="ready");
+    document.getElementById("count").textContent = making.length;  // the kitchen's number
+    renderIncoming(incoming);
     render(makingEl, making, "making", "making-empty");
     render(readyEl,  ready,  "ready",  "ready-empty");
   }

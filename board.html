@@ -143,7 +143,9 @@
     const { data, error } = await sb
       .from("orders")
       .select("ticket,status,created_at,ready_at")
-      .neq("status","picked_up")
+      // 'new' is excluded as well as 'picked_up': an order the cashier hasn't
+      // accepted yet has no queue card, so there is no number to show.
+      .in("status",["preparing","ready"])
       .gt("created_at", new Date(Date.now() - 3*3600*1000).toISOString())
       .order("created_at",{ascending:true});
     if(error){ setLive(false); return; }

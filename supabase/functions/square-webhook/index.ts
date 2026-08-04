@@ -3,9 +3,12 @@
 // Coconut Corner — Square → order board bridge
 //
 // Receives Square webhooks (order.created / order.updated), verifies the
-// signature, looks up the ticket name the customer sees, and upserts the
-// order into the `orders` table. Writes use the SERVICE ROLE key, so the
-// public no longer needs insert rights — only Square can create orders.
+// signature, reads the line items, and upserts the order into the `orders`
+// table. It lands as status 'new' (the column DEFAULT — see the
+// cashier-accept migration); a cashier then accepts it in staff.html and
+// types the number of the physical queue card they hand over. Nothing here
+// writes `ticket`. Writes use the SERVICE ROLE key, so the public no longer
+// needs insert rights — only Square can create orders.
 //
 // Deploy:  supabase functions deploy square-webhook --no-verify-jwt
 // ---------------------------------------------------------------------------
@@ -62,7 +65,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 // --- Read the order so we know what to show on the board -------------------
 type Line = { qty: number; name: string };
 async function fetchOrder(orderId: string): Promise<{
-  ticket: string;
+  squareTicket: string;
   state: string;
   items: Line[];
   isReturn: boolean;
@@ -77,9 +80,11 @@ async function fetchOrder(orderId: string): Promise<{
     });
     if (res.ok) {
       const { order } = await res.json();
-      const name = (order?.ticket_name ?? "").trim();
-      // Use the ticket number you typed at checkout; fall back to a short id.
-      const ticket = name || orderId.slice(-4).toUpperCase();
+      // Only a prefill hint for the cashier's queue-card box in staff.html —
+      // the number the customer actually walks away with is typed there. So
+      // there is deliberately no fallback: an empty box beats a made-up code
+      // the cashier would have to clear before typing the real card number.
+      const squareTicket = (order?.ticket_name ?? "").trim();
 
       // Square makes a NEW order for every refund/return/exchange, and it
       // carries a `returns` and/or `refunds` block. Those aren't food to cook,
@@ -101,7 +106,7 @@ async function fetchOrder(orderId: string): Promise<{
         return { qty: Number(li.quantity ?? "1") || 1, name: label };
       });
 
-      return { ticket, state: order?.state ?? "OPEN", items, isReturn };
+      return { squareTicket, state: order?.state ?? "OPEN", items, isReturn };
     }
     if (res.status === 404) {
       await new Promise((r) => setTimeout(r, 700));
@@ -162,15 +167,22 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Upsert: inserts on first sight (status defaults to 'preparing'), and only
-  // refreshes the ticket afterward. status / created_at / ready_at are left
-  // alone, so anything staff tapped on the board sticks.
+  // Upsert: inserts on first sight and only refreshes Square's own data
+  // afterward. It never writes `status`, so the insert takes the column
+  // DEFAULT ('new') and the order waits in the cashier's Incoming list — and a
+  // later order.updated can't drag an accepted order back out of the kitchen.
+  // ticket / created_at / ready_at / accepted_at are left alone too, so the
+  // queue-card number and anything staff tapped on the board stick.
   // NB: "COMPLETED" in Square just means paid — the pancakes still have to cook,
   // so we deliberately do NOT auto-mark it ready here. Staff do that.
   const { error } = await sb
     .from("orders")
     .upsert(
-      { square_order_id: orderId, ticket: info.ticket, items: info.items },
+      {
+        square_order_id: orderId,
+        square_ticket: info.squareTicket,
+        items: info.items,
+      },
       { onConflict: "square_order_id" },
     );
   if (error) {
