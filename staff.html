@@ -27,13 +27,14 @@
   .brand small{display:block;font-family:"Sarabun";font-weight:400;font-size:.68rem;color:var(--sage-dim);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
   .count{font-family:"Mitr";font-weight:600;font-size:1.6rem;color:var(--gold)}
   .hgroup{display:flex;align-items:center;gap:14px}
-  .sound{
+  .sound,.signout{
     flex:none;width:40px;height:40px;border-radius:12px;font-size:1.05rem;line-height:1;
     background:var(--iron-2);border:1px solid var(--iron-line);color:var(--cream);
     cursor:pointer;-webkit-tap-highlight-color:transparent;
   }
   .sound[aria-pressed="false"]{opacity:.5}
-  .sound:active{transform:translateY(1px)}
+  .sound:active,.signout:active{transform:translateY(1px)}
+  .signout{color:var(--sage-dim);font-size:.95rem}
 
   h2{font-family:"Mitr";font-weight:500;font-size:.8rem;letter-spacing:2px;text-transform:uppercase;color:var(--sage-dim);margin:22px 2px 12px}
   h2 .badge{
@@ -188,27 +189,36 @@
   #cancel-ok:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(90,30,18,.6)}
   #cancel-ok:disabled{opacity:.55}
 
-  /* PIN gate */
-  #gate{position:fixed;inset:0;background:var(--iron);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:24px;z-index:10}
+  /* Sign-in gate */
+  /* Above #cancel (40): if the session dies while a cancel alert is up, the
+     acknowledgement can't be written anyway, so the sign-in form has to be
+     the thing on top. Signing back in re-raises the alert — cancel_ack_at is
+     still null — so this is a stricter block, not a way out of one. */
+  #gate{position:fixed;inset:0;background:var(--iron);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:24px;z-index:50}
+  #gate[hidden]{display:none}   /* the display:flex above outranks the hidden attribute */
   #gate h1{font-family:"Mitr";font-weight:500;font-size:1.2rem}
-  #pin{font-family:"Mitr";font-size:1.6rem;text-align:center;letter-spacing:10px;width:220px;padding:14px;border-radius:14px;border:1px solid var(--iron-line);background:var(--iron-2);color:var(--cream)}
-  #pin:focus{outline:2px solid var(--gold)}
+  #gate .who{font-size:.78rem;color:var(--sage-dim);letter-spacing:.4px;margin-top:-12px}
+  #pw{font-family:"Mitr";font-size:1.4rem;text-align:center;letter-spacing:6px;width:220px;padding:14px;border-radius:14px;border:1px solid var(--iron-line);background:var(--iron-2);color:var(--cream)}
+  #pw:focus{outline:2px solid var(--gold)}
   #gate .btn{width:220px;text-align:center}
-  #gate .err{color:var(--danger);font-size:.85rem;height:1em}
+  #gate .btn[disabled]{opacity:.5;pointer-events:none}
+  #gate .err{color:var(--danger);font-size:.85rem;height:1em;text-align:center;max-width:260px}
 </style>
 </head>
 <body>
 <div id="gate">
   <h1>Staff</h1>
-  <input id="pin" inputmode="numeric" placeholder="PIN" autocomplete="off" />
+  <div class="who" id="gate-who"></div>
+  <input id="pw" type="password" placeholder="Password" autocomplete="current-password" />
   <div class="err" id="err"></div>
-  <button class="btn" id="enter">Enter</button>
+  <button class="btn" id="enter">Sign in</button>
 </div>
 
 <div class="wrap" id="app" hidden>
   <header>
     <div class="brand">Coconut Corner<small>Staff</small></div>
     <div class="hgroup">
+      <button class="signout" id="signout" title="Sign out" aria-label="Sign out">⏻</button>
       <button class="sound" id="sound" aria-pressed="true">🔔</button>
       <div class="count" id="count">0</div>
     </div>
@@ -257,15 +267,29 @@
   // ─── Fill in your details ───────────────────────────────────
   const SUPABASE_URL = "https://kbkrqqvxbligybvgtyxx.supabase.co";
   const SUPABASE_ANON = "sb_publishable_zmng-XP1Yfiox8ZPW5Wfsg_U1lQK2x3";
-  const STAFF_PIN     = "2468";   // change this. Weak gate — see the note in chat.
+
+  // One shared staff account in Supabase Auth. The address is public (this file
+  // is served from Pages like everything else) — the password is the secret,
+  // and it is never in the source. Create the user in the dashboard:
+  //   Authentication → Users → Add user → "Auto Confirm User" ON.
+  const STAFF_EMAIL = "staff@coconutcorner.ca";
   // ────────────────────────────────────────────────────────────
 
-  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  // Session lives in localStorage and refreshes itself, so staff sign in once
+  // per device and stay signed in. `storageKey` is explicit so this page can
+  // never share a session slot with anything else on the same Pages origin.
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      storageKey: "cc-staff-auth",
+    },
+  });
 
   // ── Chime when an order lands in Incoming ─────────────────────────
   // Synthesised with WebAudio rather than an <audio src>: Pages serves this
   // repo as-is, so this keeps the page a single self-contained file.
-  // Browsers won't make noise before a gesture — the PIN tap unlocks it.
+  // Browsers won't make noise before a gesture — the sign-in tap unlocks it.
   let audio = null;
   let soundOn = localStorage.getItem("staff-sound") !== "off";
 
@@ -273,6 +297,15 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     if(!audio && AC) audio = new AC();
     if(audio) audio.resume().catch(()=>{});
+  }
+
+  // A restored session goes straight into the app, so there is no sign-in tap
+  // to unlock audio with — take the first gesture anywhere on the page instead.
+  // Until it happens `chime()` and `alarm()` no-op on `!audio`; that is the
+  // browser's rule, not ours, and the Incoming badge still shows regardless.
+  function armAudioUnlock(){
+    const once = ()=>{ unlockAudio(); document.removeEventListener("pointerdown", once); };
+    document.addEventListener("pointerdown", once);
   }
 
   function chime(){
@@ -336,19 +369,94 @@
     seenNew = ids;
   }
 
-  // PIN gate
-  const gate = document.getElementById("gate");
-  document.getElementById("enter").onclick = tryPin;
-  document.getElementById("pin").addEventListener("keydown", e=>{ if(e.key==="Enter") tryPin(); });
-  function tryPin(){
-    if(document.getElementById("pin").value === STAFF_PIN){
-      gate.remove(); document.getElementById("app").hidden = false;
-      unlockAudio();   // this click is the gesture the browser wants
-      start();
-    } else {
-      document.getElementById("err").textContent = "Wrong PIN";
-    }
+  // ── Sign-in gate ──────────────────────────────────────────────────
+  // This is real auth now, not the old client-side PIN: the anon key in this
+  // file can read `orders` and nothing else. Every write below needs the JWT
+  // that signing in returns, so a copy of this page without the password is
+  // a read-only board.
+  const gate    = document.getElementById("gate");
+  const pwEl    = document.getElementById("pw");
+  const errEl   = document.getElementById("err");
+  const enterEl = document.getElementById("enter");
+
+  document.getElementById("gate-who").textContent = STAFF_EMAIL;
+  enterEl.onclick = signIn;
+  pwEl.addEventListener("keydown", e=>{ if(e.key==="Enter") signIn(); });
+
+  // The gate is hidden, never removed — an expired session has to be able to
+  // put it back without a reload (see `writeFailed`).
+  let started = false;
+  function enterApp(){
+    gate.hidden = true;
+    document.getElementById("app").hidden = false;
+    if(started) return;    // re-entering after a re-auth: don't stack timers
+    started = true;
+    start();
   }
+  function showGate(msg){
+    errEl.textContent = msg || "";
+    pwEl.value = "";
+    gate.hidden = false;
+    document.getElementById("app").hidden = true;
+  }
+
+  async function signIn(){
+    if(enterEl.disabled) return;      // Enter key doesn't respect the button's state
+    const password = pwEl.value;
+    if(!password){ errEl.textContent = "Enter the password"; return; }
+    enterEl.disabled = true;
+    errEl.textContent = "";
+    unlockAudio();   // this click is the gesture the browser wants
+    const { error } = await sb.auth.signInWithPassword({ email: STAFF_EMAIL, password });
+    enterEl.disabled = false;
+    if(error){
+      errEl.textContent = /invalid login/i.test(error.message)
+        ? "Wrong password"
+        : error.message;
+      pwEl.focus(); pwEl.select();
+      return;
+    }
+    pwEl.value = "";
+    enterApp();
+  }
+
+  document.getElementById("signout").onclick = async ()=>{
+    // scope:"local" — the default revokes the refresh token for the whole
+    // user, and this account is shared, so a global sign-out would kick every
+    // other till in the shop off mid-service.
+    await sb.auth.signOut({ scope: "local" });
+    location.reload();
+  };
+
+  // Did that write actually land, and if not, is it because we're signed out?
+  //
+  // Checking `error` is not enough. With the anon update policy dropped, a
+  // signed-out UPDATE doesn't fail — RLS filters the row out and PostgREST
+  // reports a perfectly successful write of *zero rows*. That is why every
+  // write below asks for its rows back with .select("id"): an empty result is
+  // the signal, and the session check here is what turns it into a prompt
+  // instead of a tap that silently did nothing mid-service.
+  //
+  // Returns true only when the caller should stop and let the gate take over.
+  // A genuine error with a live session (the unique index rejecting an undo,
+  // a dropped connection) returns false and is handled where it always was.
+  async function writeFailed(error, data){
+    if(!error && Array.isArray(data) && data.length > 0) return false;
+    const { data: s } = await sb.auth.getSession();
+    if(!s?.session){
+      showGate("Signed out — sign in again");
+      return true;
+    }
+    if(!error) console.warn("write affected no rows", data);
+    return false;
+  }
+
+  // Covers the refresh token finally failing while the page sits open.
+  // Guarded on `started` so the INITIAL_SESSION/no-session path on a fresh
+  // device doesn't greet anyone with "signed out".
+  sb.auth.onAuthStateChange((event)=>{
+    if(event === "SIGNED_OUT" && started) showGate("Signed out — sign in again");
+  });
 
   const incomingEl = document.getElementById("incoming");
   const makingEl   = document.getElementById("making");
@@ -383,8 +491,10 @@
     liEl.classList.toggle("done", checked[idx]);            // optimistic
     const prog = liEl.closest(".row")?.querySelector(".prog");
     if(prog) writeProgress(prog, row);
-    const { error } = await sb.from("orders").update({ checked }).eq("id", row.id);
-    if(error) liEl.classList.toggle("done", !checked[idx]); // revert if it didn't save
+    const { data, error } = await sb.from("orders")
+      .update({ checked }).eq("id", row.id).select("id");
+    if(error || !data?.length) liEl.classList.toggle("done", !checked[idx]); // revert
+    await writeFailed(error, data);
   }
 
   // The order contents, as a tick-off checklist (interactive only while making).
@@ -443,7 +553,9 @@
       const b = document.createElement("button");
       b.className = "btn ghost"; b.textContent = "Release card";
       b.onclick = async ()=>{
-        await sb.from("orders").update({ status:"picked_up" }).eq("id", c.holderId);
+        const { data, error } = await sb.from("orders")
+          .update({ status:"picked_up" }).eq("id", c.holderId).select("id");
+        if(await writeFailed(error, data)) return;
         conflicts.delete(rowId);
         load();
       };
@@ -474,18 +586,20 @@
       input.classList.add("bad"); input.focus(); input.select();
       return;
     }
-    const { error } = await sb
+    const { data, error } = await sb
       .from("orders")
       .update({ ticket: card, status: "preparing", accepted_at: new Date().toISOString() })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .select("id");
 
-    if(!error){
+    if(!error && data?.length){
       conflicts.delete(row.id);
       load();
       return;
     }
+    if(await writeFailed(error, data)) return;
     input.classList.add("bad");
-    if(error.code === "23505"){          // unique index: that card is still out
+    if(error?.code === "23505"){         // unique index: that card is still out
       const holder = await findHolder(card);
       const when = holder
         ? new Date(holder.accepted_at || holder.created_at)
@@ -569,7 +683,9 @@
     const patch = { status };
     if(status==="ready")     patch.ready_at = new Date().toISOString();
     if(status==="preparing") patch.ready_at = null;   // sent back to the pan
-    await sb.from("orders").update(patch).eq("id", id);
+    const { data, error } = await sb.from("orders")
+      .update(patch).eq("id", id).select("id");
+    if(await writeFailed(error, data)) return;
     load(); // optimistic-ish; realtime will also refresh
   }
 
@@ -677,14 +793,16 @@
     const id = cancelEl.dataset.id;
     if(!id) return;
     cancelOk.disabled = true;
-    const { error } = await sb
+    const { data, error } = await sb
       .from("orders")
       .update({ cancel_ack_at: new Date().toISOString() })
-      .eq("id", id);
+      .eq("id", id)
+      .select("id");
     cancelOk.disabled = false;
-    if(error){
+    if(error || !data?.length){
       // Never dismiss on a failed write. The recorded acknowledgement is the
       // whole point, and it's the only thing that clears this for everyone.
+      if(await writeFailed(error, data)) return;   // gate goes up over this sheet
       cancelErr.textContent = "Couldn't save — check the connection and tap again";
       return;
     }
@@ -753,12 +871,22 @@
   }
 
   function start(){
+    // Subscribed only after sign-in, so the channel carries the session JWT.
+    // supabase-js re-pushes it to Realtime on every token refresh by itself.
     sb.channel("staff")
       .on("postgres_changes",{event:"*",schema:"public",table:"orders"}, load)
       .subscribe();
     load();
     setInterval(load, 30000); // refresh wait-times
   }
+
+  // Boot: a device that signed in on a previous shift comes straight up.
+  (async ()=>{
+    armAudioUnlock();
+    const { data } = await sb.auth.getSession();
+    if(data.session) enterApp();
+    else pwEl.focus();
+  })();
 </script>
 </body>
 </html>
