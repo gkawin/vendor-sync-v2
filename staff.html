@@ -26,6 +26,14 @@
   .brand{font-family:"Mitr";font-weight:500;font-size:1rem;letter-spacing:.4px}
   .brand small{display:block;font-family:"Sarabun";font-weight:400;font-size:.68rem;color:var(--sage-dim);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
   .count{font-family:"Mitr";font-weight:600;font-size:1.6rem;color:var(--gold)}
+  .hgroup{display:flex;align-items:center;gap:14px}
+  .sound{
+    flex:none;width:40px;height:40px;border-radius:12px;font-size:1.05rem;line-height:1;
+    background:var(--iron-2);border:1px solid var(--iron-line);color:var(--cream);
+    cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  .sound[aria-pressed="false"]{opacity:.5}
+  .sound:active{transform:translateY(1px)}
 
   h2{font-family:"Mitr";font-weight:500;font-size:.8rem;letter-spacing:2px;text-transform:uppercase;color:var(--sage-dim);margin:22px 2px 12px}
   h2 .badge{
@@ -157,7 +165,10 @@
 <div class="wrap" id="app" hidden>
   <header>
     <div class="brand">Coconut Corner<small>Staff</small></div>
-    <div class="count" id="count">0</div>
+    <div class="hgroup">
+      <button class="sound" id="sound" aria-pressed="true">🔔</button>
+      <div class="count" id="count">0</div>
+    </div>
   </header>
 
   <h2>Incoming <span class="badge" id="incoming-count" hidden>0</span></h2>
@@ -190,13 +201,69 @@
 
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+  // ── Chime when an order lands in Incoming ─────────────────────────
+  // Synthesised with WebAudio rather than an <audio src>: Pages serves this
+  // repo as-is, so this keeps the page a single self-contained file.
+  // Browsers won't make noise before a gesture — the PIN tap unlocks it.
+  let audio = null;
+  let soundOn = localStorage.getItem("staff-sound") !== "off";
+
+  function unlockAudio(){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!audio && AC) audio = new AC();
+    if(audio) audio.resume().catch(()=>{});
+  }
+
+  function chime(){
+    if(!soundOn || !audio) return;
+    audio.resume().catch(()=>{});          // a backgrounded tab gets suspended
+    const t0 = audio.currentTime + 0.02;
+    [[784, 0], [1175, 0.17]].forEach(([hz, at])=>{   // G5 → D6, two-note bell
+      const t = t0 + at;
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = "sine"; osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(t); osc.stop(t + 0.5);
+    });
+  }
+
+  const soundBtn = document.getElementById("sound");
+  function paintSound(){
+    soundBtn.textContent = soundOn ? "🔔" : "🔕";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    soundBtn.title = soundOn ? "Sound on — tap to mute" : "Muted — tap for sound";
+    soundBtn.setAttribute("aria-label", soundBtn.title);
+  }
+  soundBtn.onclick = ()=>{
+    soundOn = !soundOn;
+    try{ localStorage.setItem("staff-sound", soundOn ? "on" : "off"); }catch(e){}
+    paintSound();
+    if(soundOn){ unlockAudio(); chime(); }   // let staff hear the volume
+  };
+  paintSound();
+
+  // Ids already chimed for. Rebuilt from every load(), so it stays bounded and
+  // a row that ages out of the 6h window can't linger in it. Stays null until
+  // the first load() so the backlog on screen at sign-in doesn't ring.
+  let seenNew = null;
+  function ringForNew(incoming){
+    const ids = new Set(incoming.map(r=>r.id));
+    if(seenNew && incoming.some(r=>!seenNew.has(r.id))) chime();
+    seenNew = ids;
+  }
+
   // PIN gate
   const gate = document.getElementById("gate");
   document.getElementById("enter").onclick = tryPin;
   document.getElementById("pin").addEventListener("keydown", e=>{ if(e.key==="Enter") tryPin(); });
   function tryPin(){
     if(document.getElementById("pin").value === STAFF_PIN){
-      gate.remove(); document.getElementById("app").hidden = false; start();
+      gate.remove(); document.getElementById("app").hidden = false;
+      unlockAudio();   // this click is the gesture the browser wants
+      start();
     } else {
       document.getElementById("err").textContent = "Wrong PIN";
     }
@@ -504,6 +571,7 @@
     const making   = data.filter(r=>r.status==="preparing");
     const ready    = data.filter(r=>r.status==="ready");
     document.getElementById("count").textContent = making.length;  // the kitchen's number
+    ringForNew(incoming);
     renderIncoming(incoming);
     render(makingEl, making, "making", "making-empty");
     render(readyEl,  ready,  "ready",  "ready-empty");
