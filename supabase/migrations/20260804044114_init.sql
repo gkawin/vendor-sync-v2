@@ -159,3 +159,40 @@ alter table orders alter column status set default 'new';
 --  orders land as 'preparing' with ticket = null — a blank token on the
 --  customer board. Do step 3 before opening, not mid-service.
 -- ============================================================
+
+
+-- ============================================================
+--  PART C — cancelled-order alert (void / refund / return)
+--
+--  A refund, return or void in Square takes the order off the board on its
+--  own, and frees its queue-card number the moment the row goes 'picked_up'.
+--  But the customer is still holding the physical card. These columns are how
+--  the webhook tells staff.html to block the screen until someone confirms
+--  they have it back.
+--
+--  Additive only — safe to run mid-service, and safe to run BEFORE the
+--  matching webhook deploy: until something writes canceled_at, staff.html's
+--  alert query just finds nothing. Run it before pushing the pages, though,
+--  or staff.html's alert query errors on the missing columns (it fails soft —
+--  no alert — but you'd be running blind).
+-- ============================================================
+
+-- When the webhook saw Square cancel/refund/return this order...
+alter table orders add column if not exists canceled_at   timestamptz;
+-- ...which of the three it was: 'canceled' | 'refunded' | 'returned'.
+-- Free text on purpose: an unknown value only changes the label on the alert.
+alter table orders add column if not exists cancel_reason text;
+-- ...and when a staff member confirmed the queue card is back in the box.
+-- Written by staff.html and nothing else. NULL = the alert is still up, on
+-- every signed-in device.
+alter table orders add column if not exists cancel_ack_at timestamptz;
+
+-- staff.html polls for exactly this set every load.
+create index if not exists orders_cancel_alert_idx
+  on orders (canceled_at desc)
+  where canceled_at is not null and cancel_ack_at is null;
+
+-- Rollback:
+--   drop index if exists orders_cancel_alert_idx;
+--   ...and redeploy the previous square-webhook. Leave the columns; dropping
+--   them while the old pages are still cached would break their SELECT list.

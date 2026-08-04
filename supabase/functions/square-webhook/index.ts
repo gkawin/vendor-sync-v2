@@ -69,6 +69,7 @@ async function fetchOrder(orderId: string): Promise<{
   state: string;
   items: Line[];
   isReturn: boolean;
+  sourceOrderIds: string[];
 } | null> {
   // order.created can land a split second before the order is readable — retry.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -89,9 +90,21 @@ async function fetchOrder(orderId: string): Promise<{
       // Square makes a NEW order for every refund/return/exchange, and it
       // carries a `returns` and/or `refunds` block. Those aren't food to cook,
       // so flag them and keep them off the board.
-      const isReturn =
-        (Array.isArray(order?.returns) && order.returns.length > 0) ||
-        (Array.isArray(order?.refunds) && order.refunds.length > 0);
+      const returns: any[] = Array.isArray(order?.returns) ? order.returns : [];
+      const refunds: any[] = Array.isArray(order?.refunds) ? order.refunds : [];
+      const isReturn = returns.length > 0 || refunds.length > 0;
+
+      // ...but the queue card the customer is holding belongs to the ORIGINAL
+      // sale, which a return names in `source_order_id`. Without following it,
+      // a return would only ever hit its own brand-new row (i.e. nothing) and
+      // the real order would sit on the board with a card that is being
+      // handed back at the counter. A same-order refund carries no `returns`
+      // block — there the event's own order id is already the right row.
+      const sourceOrderIds = [
+        ...new Set(
+          returns.map((r: any) => r?.source_order_id).filter(Boolean) as string[],
+        ),
+      ];
 
       // What the customer actually ordered — for the staff panel.
       const items: Line[] = (order?.line_items ?? []).map((li: any) => {
@@ -106,7 +119,13 @@ async function fetchOrder(orderId: string): Promise<{
         return { qty: Number(li.quantity ?? "1") || 1, name: label };
       });
 
-      return { squareTicket, state: order?.state ?? "OPEN", items, isReturn };
+      return {
+        squareTicket,
+        state: order?.state ?? "OPEN",
+        items,
+        isReturn,
+        sourceOrderIds,
+      };
     }
     if (res.status === 404) {
       await new Promise((r) => setTimeout(r, 700));
@@ -154,15 +173,52 @@ Deno.serve(async (req) => {
   // Don't put these on the board:
   //  - CANCELED: a voided sale.
   //  - isReturn: Square spawns a separate order for every refund/return/exchange.
-  // Either way, hide any existing row for this order id; for a brand-new
-  // refund/return order the update simply matches nothing, so no phantom ticket.
+  // Either way, hide any existing row — this order's own, plus the original
+  // sale a return points back at. For a brand-new refund/return order its own
+  // id matches nothing, so no phantom ticket.
   if (info.state === "CANCELED" || info.isReturn) {
-    await sb
+    const reason = info.state === "CANCELED"
+      ? "canceled"
+      : info.sourceOrderIds.length > 0
+      ? "returned"
+      : "refunded";
+    const ids = [...new Set([orderId, ...info.sourceOrderIds])];
+    const canceledAt = new Date().toISOString();
+
+    // A row that is still on the board with a card number on it means the
+    // customer walked off with a physical queue card that nobody is going to
+    // ask for at pickup any more. Hiding it also frees that number for reuse
+    // straight away, so staff have to be TOLD: `canceled_at` is what raises
+    // the blocking alert in staff.html.
+    //
+    // The status filter doubles as the idempotency guard — Square re-fires
+    // order.updated freely, and the second fire finds the row already
+    // picked_up, so an acknowledged alert can't come back from the dead.
+    const { data: flagged, error: flagErr } = await sb
+      .from("orders")
+      .update({
+        status: "picked_up",
+        canceled_at: canceledAt,
+        cancel_reason: reason,
+      })
+      .in("square_order_id", ids)
+      .in("status", ["preparing", "ready"])
+      .not("ticket", "is", null)
+      .select("id");
+    if (flagErr) console.error("cancel flag failed", flagErr);
+
+    // Anything else still showing for those ids — an unaccepted 'new' row —
+    // just disappears. No card was ever handed over, so there is nothing to
+    // chase and no reason to block the screen.
+    const { error: hideErr } = await sb
       .from("orders")
       .update({ status: "picked_up" })
-      .eq("square_order_id", orderId);
+      .in("square_order_id", ids)
+      .in("status", ["new", "preparing", "ready"]);
+    if (hideErr) console.error("cancel hide failed", hideErr);
+
     return new Response(
-      info.isReturn ? "Return/refund — skipped" : "Canceled",
+      `${reason} — ${flagged?.length ?? 0} card(s) to take back`,
       { status: 200 },
     );
   }
