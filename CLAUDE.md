@@ -24,12 +24,21 @@ supabase secrets set SQUARE_SIGNATURE_KEY=... SQUARE_NOTIFICATION_URL=... SQUARE
 
 `SQUARE_ENV` defaults to `production` (set `sandbox` to hit Square's sandbox API). `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase — don't set them. `config.toml`'s `project_id` names the *local* stack, not the remote project, so commands against production still need `supabase link` or `--project-ref`.
 
-**Migrations are a record, not a pipeline — against production.** Nothing applies [supabase/migrations/](supabase/migrations/) to the live project; the file says to paste it into Supabase Studio's SQL editor, and that is how every change so far was applied. (`[db.migrations] enabled = true` in config.toml means a *local* `supabase db reset` would run it, but nothing here depends on the local stack.) Adding a column means editing the migration *and* running it by hand.
+**Migrations: one hand-applied baseline, then `supabase db push`.** [20260804044114_init.sql](supabase/migrations/20260804044114_init.sql) predates the pipeline — every statement in it was pasted into Supabase Studio's SQL editor by hand, and the remote now has that version recorded as applied. **`db push` compares versions, not contents**, so editing that file changes nothing on production, forever. It only decides what a *fresh* database gets.
 
-Everything is consolidated into one [20260804044114_init.sql](supabase/migrations/20260804044114_init.sql), which leaves two traps in it:
+So **a new column means a new timestamped file**, never an edit to the baseline. [20260804051952_cancel_alert.sql](supabase/migrations/20260804051952_cancel_alert.sql) is the first of those.
+
+```bash
+supabase db push                                             # apply pending files to the linked project
+supabase migration list --linked                             # local vs remote, side by side
+supabase migration repair --status applied 20260804044114    # only if push calls the baseline pending
+```
+
+That last one is the fix for the one failure mode here: if the remote's history is missing the baseline, `db push` tries to replay init.sql top-to-bottom against a live database — which fires PART B mid-service *and* dies on `alter publication ... add table orders` (already a member). Mark it applied instead; the schema is already there.
+
+Two traps live in the baseline, and both are about reading it, not running it:
 
 - **It is not a script to paste whole into a live database.** Its tail is the cashier-accept change, deliberately split into a PART A (additive, safe any time) and a one-line PART B that flips `status`'s DEFAULT. PART B and the webhook deploy are a single cutover — running the file top-to-bottom fires PART B immediately, and doing that mid-service puts blank tokens on the customer board. The header's "Run this once" is true of a *fresh* database only.
-- **PART C (the cancellation-alert columns) is the exception** — additive only, safe to paste mid-service, and safe in either order relative to the webhook deploy. Run it *before* pushing the pages, though: staff.html's alert query selects those columns and fails soft (no alert at all) until they exist.
 - **The `create table` at the top is no longer the truth.** It declares `ticket not null`, `status default 'preparing'`, and a CHECK without `'new'` — all three are undone further down the same file. Read the bottom before believing the top.
 
 ## Architecture
@@ -93,7 +102,7 @@ The upsert writes only `square_order_id`, `square_ticket`, and `items`. Everythi
 
 **The Incoming chime rides on that same `load()`.** `ringForNew()` diffs the `new` ids against the previous load's set and plays a WebAudio-synthesised two-note bell when any id is unseen — no audio file, and no `<audio>` element. The set starts as `null` so the backlog already on screen at sign-in doesn't ring, and it is *replaced* each load, so it stays bounded and a row aged out of the 6h window can't linger in it. Browsers block audio before a gesture, so the PIN tap calls `unlockAudio()` to build the `AudioContext`; `chime()` re-`resume()`s it because a backgrounded tab gets suspended. The header 🔔 toggle persists to `localStorage["staff-sound"]` and is the only mute — a muted device still shows the Incoming badge.
 
-**The cancelled-order alert rides on `load()` too, but as a second query.** `load()` kicks off `loadCancels()` without awaiting it — those rows are `picked_up`, so `load()`'s own status filter can never see them. It selects `canceled_at is not null and cancel_ack_at is null` within 6h *of the cancellation*, and shows them one at a time, oldest first. `alarmForCancels()` diffs ids exactly like `ringForNew()` (same `null` start, same 🔔 mute) and plays a distinct lower repeating tone. `renderCancel()` returns early when the row on screen is already the one at the head of the queue, so a realtime event can't rebuild the sheet mid-read or wipe a failed-save message. The query fails soft: if PART C of the migration hasn't been run, the missing columns error out and no alert ever shows.
+**The cancelled-order alert rides on `load()` too, but as a second query.** `load()` kicks off `loadCancels()` without awaiting it — those rows are `picked_up`, so `load()`'s own status filter can never see them. It selects `canceled_at is not null and cancel_ack_at is null` within 6h *of the cancellation*, and shows them one at a time, oldest first. `alarmForCancels()` diffs ids exactly like `ringForNew()` (same `null` start, same 🔔 mute) and plays a distinct lower repeating tone. `renderCancel()` returns early when the row on screen is already the one at the head of the queue, so a realtime event can't rebuild the sheet mid-read or wipe a failed-save message. The query fails soft: until `20260804051952_cancel_alert.sql` is pushed, the missing columns error out and no alert ever shows — the pages otherwise behave exactly as before, which is why this one goes wrong quietly.
 
 That full re-render is why `renderIncoming()` snapshots each card-number `<input>` (value *and* caret) before wiping the list and restores it afterward, and why conflict messages live in a module-level `conflicts` map instead of the DOM. Without both, an unrelated realtime event mid-typing would eat what the cashier was entering.
 
