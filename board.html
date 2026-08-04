@@ -165,7 +165,7 @@
   // Polling instead of a realtime subscription. PostgREST can't hold a request
   // open until something changes, so this is a short fixed interval, not a
   // server-held long poll.
-  const POLL_MS = 3000;
+  const POLL_MS = 5000;
   let inFlight = false;
 
   async function poll(){
