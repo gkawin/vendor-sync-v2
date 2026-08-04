@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-There is no build system, package manager, linter, or test suite.
+No build step, linter, or test suite. `package.json` exists only to pin the Supabase CLI as a devDependency — the pages have no npm dependencies and ship exactly as they are on disk.
 
 ```bash
 python3 -m http.server 8000   # preview locally: /board.html and /staff.html
+npm run dev                   # supabase functions serve — the webhook, locally
 ```
 
-**Deploying the pages:** push to `main`. [.github/workflows/static.yml](.github/workflows/static.yml) uploads the **entire repo root** to GitHub Pages, so every file committed here is publicly served — this file, and `supabase/` included. `workflow_dispatch` allows a manual redeploy.
+**Deploying the pages:** push to `main`. [.github/workflows/static.yml](.github/workflows/static.yml) uploads the **entire repo root** to GitHub Pages, so every file committed here is publicly served — this file, `package.json`, and `supabase/` included. `workflow_dispatch` allows a manual redeploy.
 
 **Deploying the webhook** (not covered by CI — this is a manual step):
 
@@ -19,11 +20,16 @@ supabase functions deploy square-webhook --no-verify-jwt   # Square sends no Sup
 supabase secrets set SQUARE_SIGNATURE_KEY=... SQUARE_NOTIFICATION_URL=... SQUARE_ACCESS_TOKEN=...
 ```
 
-`SQUARE_ENV` defaults to `production` (set `sandbox` to hit Square's sandbox API). `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase — don't set them. There is no `supabase/config.toml`, so CLI commands need a linked project or `--project-ref`.
+⚠️ **`npm run deploy` is not that command.** It is a bare `supabase functions deploy` — no function name, and **no `--no-verify-jwt`** — and there is no `[functions.square-webhook] verify_jwt = false` in `supabase/config.toml` to compensate. Use the explicit command above, or Square's deliveries start failing auth.
 
-**Migrations are a record, not a pipeline.** Nothing runs [supabase/migrations/](supabase/migrations/) — the init file says to paste it into Supabase Studio's SQL editor, and the later `alter table` files were applied the same way. Adding a column means writing the migration file *and* running it by hand.
+`SQUARE_ENV` defaults to `production` (set `sandbox` to hit Square's sandbox API). `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase — don't set them. `config.toml`'s `project_id` names the *local* stack, not the remote project, so commands against production still need `supabase link` or `--project-ref`.
 
-[20260804001-cashier-accept.sql](supabase/migrations/20260804001-cashier-accept.sql) is deliberately split into a PART A (additive, safe any time) and a one-line PART B that flips `status`'s DEFAULT. PART B and the webhook deploy are a single cutover — its header spells out the order, and doing it mid-service puts blank tokens on the customer board.
+**Migrations are a record, not a pipeline — against production.** Nothing applies [supabase/migrations/](supabase/migrations/) to the live project; the file says to paste it into Supabase Studio's SQL editor, and that is how every change so far was applied. (`[db.migrations] enabled = true` in config.toml means a *local* `supabase db reset` would run it, but nothing here depends on the local stack.) Adding a column means editing the migration *and* running it by hand.
+
+Everything is consolidated into one [20260804044114_init.sql](supabase/migrations/20260804044114_init.sql), which leaves two traps in it:
+
+- **It is not a script to paste whole into a live database.** Its tail is the cashier-accept change, deliberately split into a PART A (additive, safe any time) and a one-line PART B that flips `status`'s DEFAULT. PART B and the webhook deploy are a single cutover — running the file top-to-bottom fires PART B immediately, and doing that mid-service puts blank tokens on the customer board. The header's "Run this once" is true of a *fresh* database only.
+- **The `create table` at the top is no longer the truth.** It declares `ticket not null`, `status default 'preparing'`, and a CHECK without `'new'` — all three are undone further down the same file. Read the bottom before believing the top.
 
 ## Architecture
 
