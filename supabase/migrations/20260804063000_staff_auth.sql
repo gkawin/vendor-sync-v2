@@ -11,7 +11,7 @@
 --
 --  ⚠️ DEPLOY ORDER — getting this wrong stops staff working mid-service:
 --    1. Supabase dashboard → Authentication → Users → Add user.
---         email: staff@coconutcorner.app   (must match STAFF_EMAIL in staff.html)
+--         email: staff@coconutcorner.ca    (must match STAFF_EMAIL in staff.html)
 --         "Auto Confirm User" ON — there is no inbox behind that address.
 --    2. Push staff.html to Pages, then sign in on every till/phone that
 --       uses it. They keep working on the anon policy while you do this.
