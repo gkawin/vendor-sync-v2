@@ -160,12 +160,20 @@
     document.getElementById("live").classList.toggle("off", !ok);
   }
 
-  sb.channel("board")
-    .on("postgres_changes",{event:"*",schema:"public",table:"orders"}, load)
-    .subscribe();
+  // Polling instead of a realtime subscription. PostgREST can't hold a request
+  // open until something changes, so this is a short fixed interval, not a
+  // server-held long poll.
+  const POLL_MS = 3000;
+  let inFlight = false;
 
-  load();
-  setInterval(load, 30000); // safety refresh if a realtime event is missed
+  async function poll(){
+    if(inFlight) return; // never stack queries if one is slow
+    inFlight = true;
+    try { await load(); } finally { inFlight = false; }
+  }
+
+  poll();
+  setInterval(poll, POLL_MS);
 </script>
 </body>
 </html>

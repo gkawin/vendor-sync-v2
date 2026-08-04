@@ -61,7 +61,7 @@ Square's `COMPLETED` state only means *paid* — the webhook deliberately does *
 
 The upsert writes only `square_order_id`, `ticket`, and `items` — `status`, `created_at`, `ready_at`, and `checked` are left alone, so anything staff tapped survives a later `order.updated`.
 
-**Realtime.** Both pages subscribe to `postgres_changes` on `public.orders` (`event: "*"`) and respond to any event by re-running `load()` — a full re-query and full re-render; the payload is ignored. A 30s `setInterval` backstops missed events and refreshes wait-time labels. staff.html doesn't subscribe at all until the PIN is accepted (`start()`). Adding a column the UI needs means updating the `.select()` list in the relevant file.
+**Refresh — the two pages differ.** staff.html subscribes to `postgres_changes` on `public.orders` (`event: "*"`) and responds to any event by re-running `load()` — a full re-query and full re-render; the payload is ignored. A 30s `setInterval` backstops missed events and refreshes wait-time labels. It doesn't subscribe at all until the PIN is accepted (`start()`). board.html has no subscription: it polls `load()` every `POLL_MS` (5s), guarded by an `inFlight` flag so a slow query can't stack up. PostgREST can't hold a request open, so that is a fixed interval, not a server-held long poll. Adding a column the UI needs means updating the `.select()` list in the relevant file.
 
 ## Gotchas
 
