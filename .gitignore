@@ -141,3 +141,9 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Agent skills + personal assistant instructions — this repo's Pages workflow
+# publishes the ENTIRE repo root, so keeping these untracked keeps them private
+.agents/
+.github/copilot-instructions.md
+skills-lock.json
