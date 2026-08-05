@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#16231B" />
 <title>Coconut Corner — Order Board</title>
+<link rel="icon" href="logo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
@@ -29,12 +30,15 @@
   .wrap{max-width:100%;margin:0}
 
   header{display:flex;align-items:center;gap:12px;padding:6px 2px 20px}
+  /* The gradients under logo.png are the fallback, not decoration: a missing
+     file leaves them painting the old drawn mark instead of a broken image. */
   .mark{
     width:40px;height:40px;border-radius:50%;flex:none;
     background:
+      url("logo.png") center/cover no-repeat,
       radial-gradient(circle at 50% 38%, var(--pandan) 0 30%, transparent 31%),
       radial-gradient(circle at 50% 50%, var(--gold) 0 60%, var(--gold-deep) 61% 100%);
-    box-shadow:inset 0 -3px 6px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.3);
+    box-shadow:0 2px 8px rgba(0,0,0,.3);
   }
   .brand{font-family:"Mitr";font-weight:500;font-size:1.05rem;letter-spacing:.5px;line-height:1}
   .brand small{display:block;font-family:"Sarabun";font-weight:400;font-size:.72rem;color:var(--sage-dim);letter-spacing:2px;text-transform:uppercase;margin-top:3px}
