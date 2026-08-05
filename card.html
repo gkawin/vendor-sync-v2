@@ -249,6 +249,8 @@
   let doneAt  = null;   // ms timestamp we first saw this order picked up
   let stopped = false;
   let smsState = "idle"; // idle | saved — collapses the form after a save
+  let smsNote  = "";     // shown under the status after a save — lives here
+                         // because renderOrder rewrites ord-sub every poll
 
   // Cards are reused all day, so the card number alone is not an identity: it
   // means "whoever holds card 12 right now". We resolve it to a row id once and
@@ -328,7 +330,9 @@
       $("ord-sub").textContent    = "Thanks! Please hand the card back if you still have it.";
     } else {
       $("ord-status").textContent = "Making it now";
-      $("ord-sub").textContent    = waitedLabel(row.accepted_at || row.created_at);
+      const waited = waitedLabel(row.accepted_at || row.created_at);
+      $("ord-sub").textContent = smsNote && waited ? waited + " · " + smsNote
+                                                   : (smsNote || waited);
     }
 
     renderItems(row.items);
@@ -444,8 +448,15 @@
         return;
       }
       smsState = "saved";
+      // `confirmed` is whether a confirmation text actually went out on this
+      // call — false on a repeat save inside the cooldown, or if Twilio
+      // refused. The number is saved either way, so the fallback line still
+      // promises the ready text.
+      smsNote = out.confirmed
+        ? "Confirmation text sent — we'll text again when it's ready."
+        : "We'll text you when it's ready.";
       $("sms").hidden = true;
-      $("ord-sub").textContent = "We'll text you when it's ready.";
+      $("ord-sub").textContent = smsNote;
     }catch(_){
       phoneMsg("No connection. Keep this page open — it updates on its own.", "bad");
     }finally{
@@ -474,7 +485,7 @@
     const c = cardFromHash();
     if(c === card) return;
     card = c;
-    orderId = null; doneAt = null; stopped = false; smsState = "idle";
+    orderId = null; doneAt = null; stopped = false; smsState = "idle"; smsNote = "";
     phoneMsg("");
     $("phone").value = "";
     document.body.classList.remove("is-ready","is-done");

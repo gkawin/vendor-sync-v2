@@ -13,6 +13,12 @@
 // the SERVICE ROLE key, into `order_contacts` — a table with RLS on and no
 // policies at all, which nothing but the service role can read.
 //
+// A successful save also texts a one-line confirmation to the number it just
+// stored — same TWILIO_* secrets as order-ready-sms, and like it a DRY RUN
+// (log only) until they are set. The endpoint is public, so the send is
+// rate-limited by claiming order_contacts.confirm_sent_at; saving the number
+// never waits on the text or fails because of it.
+//
 // Callers are anonymous customers with no Supabase JWT, so:
 //   supabase functions deploy order-contact --no-verify-jwt
 // (Same trap as square-webhook: `npm run deploy` is NOT this command.)
@@ -24,7 +30,52 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+const TWILIO_SID = Deno.env.get("TWILIO_ACCOUNT_SID") ?? "";
+const TWILIO_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";
+const TWILIO_FROM = Deno.env.get("TWILIO_FROM") ?? ""; // e.g. +16045550123
+const TWILIO_MSG_SID = Deno.env.get("TWILIO_MESSAGING_SERVICE_SID") ?? "";
+
+const LIVE = Boolean(TWILIO_SID && TWILIO_TOKEN && (TWILIO_FROM || TWILIO_MSG_SID));
+
+// At most one confirmation text per order per this window, however many times
+// the endpoint is POSTed — see the claim below.
+const CONFIRM_COOLDOWN_MS = 60_000;
+
 const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+// One GSM-7 segment, same rule as order-ready-sms's body. No em dash — that
+// character alone would flip the whole message to UCS-2 and 70-char segments.
+const confirmBody = (card: string) =>
+  `Coconut Corner: got your number! We'll text you here when order #${card} is ready.`;
+
+// Never put a whole number in a log line.
+const mask = (p: string) => (p.length > 4 ? "…" + p.slice(-4) : "…");
+
+// Duplicated from order-ready-sms — the edge functions share no code, by the
+// same rule as the pages.
+async function sendSms(to: string, body: string): Promise<string | null> {
+  const form = new URLSearchParams({ To: to, Body: body });
+  if (TWILIO_MSG_SID) form.set("MessagingServiceSid", TWILIO_MSG_SID);
+  else form.set("From", TWILIO_FROM);
+
+  const res = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa(`${TWILIO_SID}:${TWILIO_TOKEN}`),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form,
+    },
+  );
+
+  const out = await res.json().catch(() => ({} as any));
+  if (!res.ok) return `twilio ${res.status}: ${out?.message ?? "unknown"}`;
+
+  console.log("queued confirm", out?.sid, "->", mask(to), "status", out?.status);
+  return null;
+}
 
 // card.html is served from GitHub Pages, this runs on supabase.co, so every
 // call is cross-origin. No cookies or Authorization header are involved — the
@@ -143,7 +194,50 @@ Deno.serve(async (req) => {
     return json({ error: "Couldn't save that. Keep the page open." }, 500);
   }
 
+  // The confirmation text. Sending unconditionally would let anyone who can
+  // reach this endpoint text an arbitrary Canadian number in a loop on our
+  // Twilio bill — so, same fix as order-ready-sms: claim the row by writing
+  // confirm_sent_at in the statement that filters on it. Concurrent POSTs
+  // serialise in Postgres and at most one per cooldown window sends. The
+  // number is already saved either way — a skipped confirmation costs the
+  // customer nothing, and notified_at is untouched by any of this.
+  let confirmed = false;
+  const cutoff = new Date(Date.now() - CONFIRM_COOLDOWN_MS).toISOString();
+  const { data: claimed, error: claimErr } = await sb
+    .from("order_contacts")
+    .update({ confirm_sent_at: new Date().toISOString() })
+    .eq("order_id", order.id)
+    .or(`confirm_sent_at.is.null,confirm_sent_at.lt.${cutoff}`)
+    .select("order_id");
+
+  if (claimErr) {
+    // Most likely 20260805120000_contact_confirm.sql hasn't been pushed yet.
+    // Fail soft, like the cancel alert: the number is saved, no text goes out.
+    console.error("confirm claim failed", claimErr);
+  } else if (claimed?.length) {
+    if (!LIVE) {
+      console.log("DRY RUN (no Twilio secrets set) confirm ->", mask(phone));
+      confirmed = true;
+    } else {
+      let failure: string | null = null;
+      try {
+        failure = await sendSms(phone, confirmBody(card));
+      } catch (e) {
+        failure = `send threw: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      if (failure) {
+        // Logged only — notify_error belongs to the ready text's sender, and
+        // a missed confirmation isn't worth a column: the page in the
+        // customer's hand already says "saved".
+        console.error("confirm sms failed", failure, mask(phone));
+      } else {
+        confirmed = true;
+      }
+    }
+  }
+
   // Deliberately returns nothing about the number — not even a masked echo.
   // Nothing anonymous should be able to read a phone number back out.
-  return json({ ok: true });
+  // `confirmed` only says whether a confirmation text went out on this call.
+  return json({ ok: true, confirmed });
 });
