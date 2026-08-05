@@ -364,10 +364,15 @@
   // a row that ages out of the 6h window can't linger in it. Stays null until
   // the first load() so the backlog on screen at sign-in doesn't ring.
   let seenNew = null;
+  // Returns the ids that are new this load — renderIncoming uses them to move
+  // focus to a fresh arrival's card box. Same semantics as the chime: the
+  // backlog at sign-in doesn't count.
   function ringForNew(incoming){
     const ids = new Set(incoming.map(r=>r.id));
-    if(seenNew && incoming.some(r=>!seenNew.has(r.id))) chime();
+    const fresh = seenNew ? incoming.filter(r=>!seenNew.has(r.id)).map(r=>r.id) : [];
+    if(fresh.length) chime();
     seenNew = ids;
+    return fresh;
   }
 
   // ── Sign-in gate ──────────────────────────────────────────────────
@@ -618,7 +623,7 @@
     fillConflict(msgEl, row.id);
   }
 
-  function renderIncoming(rows){
+  function renderIncoming(rows, freshIds){
     // load() fires on every realtime event and every 30s. Snapshot whatever is
     // half-typed, and where the caret is, so a re-render can't eat it.
     const typed = {};
@@ -672,6 +677,12 @@
     if(focusedId){
       const back = incomingEl.querySelector('.cardno[data-id="'+focusedId+'"]');
       if(back){ back.focus(); if(caret != null) back.setSelectionRange(caret, caret); }
+    } else if(freshIds && freshIds.length){
+      // A fresh arrival: put the cursor in its card box so the cashier can type
+      // right away. The branch above wins, so this never steals focus from an
+      // input mid-typing; select() lets typing replace the square_ticket prefill.
+      const inp = incomingEl.querySelector('.cardno[data-id="'+freshIds[0]+'"]');
+      if(inp){ inp.focus(); inp.select(); }
     }
 
     document.getElementById("incoming-empty").hidden = rows.length > 0;
@@ -865,8 +876,8 @@
     const making   = data.filter(r=>r.status==="preparing");
     const ready    = data.filter(r=>r.status==="ready");
     document.getElementById("count").textContent = making.length;  // the kitchen's number
-    ringForNew(incoming);
-    renderIncoming(incoming);
+    const fresh = ringForNew(incoming);
+    renderIncoming(incoming, fresh);
     render(makingEl, making, "making", "making-empty");
     render(readyEl,  ready,  "ready",  "ready-empty");
   }
