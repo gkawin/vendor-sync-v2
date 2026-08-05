@@ -105,6 +105,21 @@
   .sms h2{font-family:"Mitr";font-weight:500;font-size:1.05rem;margin-bottom:4px}
   .sms p{color:var(--sage-dim);font-size:.82rem;line-height:1.45;margin-bottom:12px}
   .row{display:flex;gap:8px}
+
+  /* The phone box wears its country. Canadian numbers are the only ones we can
+     text, so saying it on the control itself beats an error after the fact —
+     and the visible "+1" is what tells someone to type ten digits, not eleven. */
+  .field{
+    display:flex;align-items:center;gap:8px;
+    background:var(--iron);border:1px solid var(--iron-line);border-radius:10px;
+    padding:0 13px;
+  }
+  .field:focus-within{border-color:var(--pandan)}
+  .field .flag{font-size:1.3rem;line-height:1;flex:none}
+  .field .cc{color:var(--sage-dim);font-size:1.05rem;flex:none;letter-spacing:.5px}
+  .field input{flex:1;border:0;background:transparent;border-radius:0;padding:12px 0}
+  .field input:focus{border-color:transparent}
+
   input{
     flex:1;min-width:0;
     background:var(--iron);color:var(--cream);
@@ -119,6 +134,7 @@
     background:var(--gold);color:#3A2409;
   }
   .btn:disabled{opacity:.5;cursor:default}
+  .btn.wide{width:100%;margin-top:10px;padding:13px}
   .btn.ghost{background:transparent;color:var(--sage-dim);border:1px solid var(--iron-line);padding:9px 14px;font-size:.85rem}
   .msg{margin-top:10px;font-size:.85rem;line-height:1.4}
   .msg.bad{color:var(--alarm)}
@@ -179,13 +195,16 @@
 
     <div class="sms" id="sms" hidden>
       <h2>Get a text when it's ready</h2>
-      <p>Canadian mobile numbers only. One message, nothing else — we're not
+      <p>🇨🇦 Canadian mobile numbers only. One message, nothing else — we're not
          signing you up for anything.</p>
-      <div class="row">
+      <div class="field">
+        <span class="flag" role="img" aria-label="Canada">🇨🇦</span>
+        <span class="cc" aria-hidden="true">+1</span>
         <input id="phone" type="tel" inputmode="tel" autocomplete="tel"
+               aria-label="Canadian mobile number, without the country code"
                placeholder="604 555 0123" maxlength="20" />
-        <button class="btn" id="phone-go">Notify me</button>
       </div>
+      <button class="btn wide" id="phone-go">Notify me</button>
       <div class="msg" id="phone-msg" hidden></div>
       <div class="fine">Your number is used once, to send this one message, and
         is deleted after the event. It is never shown on any screen.</div>
