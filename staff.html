@@ -365,12 +365,14 @@
   // the first load() so the backlog on screen at sign-in doesn't ring.
   let seenNew = null;
   // Returns the ids that are new this load — renderIncoming uses them to move
-  // focus to a fresh arrival's card box. Same semantics as the chime: the
-  // backlog at sign-in doesn't count.
+  // focus to a fresh arrival's card box. The backlog on the first load counts
+  // as fresh for focus (so a reload lands ready to type) but never rings.
   function ringForNew(incoming){
     const ids = new Set(incoming.map(r=>r.id));
-    const fresh = seenNew ? incoming.filter(r=>!seenNew.has(r.id)).map(r=>r.id) : [];
-    if(fresh.length) chime();
+    const fresh = seenNew === null
+      ? incoming.map(r=>r.id)
+      : incoming.filter(r=>!seenNew.has(r.id)).map(r=>r.id);
+    if(seenNew !== null && fresh.length) chime();
     seenNew = ids;
     return fresh;
   }
