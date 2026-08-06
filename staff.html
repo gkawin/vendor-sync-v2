@@ -370,7 +370,7 @@
   function ringForNew(incoming){
     const ids = new Set(incoming.map(r=>r.id));
     const fresh = seenNew === null
-      ? incoming.map(r=>r.id)
+      ? incoming.map(r=>r.id) 
       : incoming.filter(r=>!seenNew.has(r.id)).map(r=>r.id);
     if(seenNew !== null && fresh.length) chime();
     seenNew = ids;
@@ -625,6 +625,34 @@
     fillConflict(msgEl, row.id);
   }
 
+  // Some items don't need a queue card at all — a bottled drink handed over at
+  // the counter never leaves the customer's hand. There is no card to chase, no
+  // number for the board to print, and nothing for the kitchen to make, so the
+  // row goes straight to picked_up: the same "off the board" mechanism a cancel
+  // reuses. `ticket` stays null, so the partial unique index is untouched and
+  // any number of these can sit there at once. accepted_at still gets stamped —
+  // it records that a cashier dealt with the order, and a canceled row carries
+  // canceled_at instead, so the two stay tellable apart afterwards.
+  //
+  // There is no undo: the row leaves every screen at once and is reachable only
+  // by SQL after that. The ghost styling keeps it visually secondary to Accept.
+  async function noCard(row, msgEl){
+    const { data, error } = await sb
+      .from("orders")
+      .update({ status:"picked_up", accepted_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .select("id");
+
+    if(!error && data?.length){
+      conflicts.delete(row.id);
+      load();
+      return;
+    }
+    if(await writeFailed(error, data)) return;
+    conflicts.set(row.id, { text:"Couldn't save — check the connection and try again" });
+    fillConflict(msgEl, row.id);
+  }
+
   function renderIncoming(rows, freshIds){
     // load() fires on every realtime event and every 30s. Snapshot whatever is
     // half-typed, and where the caret is, so a re-render can't eat it.
@@ -668,8 +696,14 @@
       btn.onclick = go;
       input.addEventListener("keydown", e=>{ if(e.key==="Enter") go(); });
 
+      // Sits after Accept on purpose: a thumb reaching for the primary action
+      // can't land on the one that makes the order disappear.
+      const skip = document.createElement("button");
+      skip.className="btn ghost"; skip.textContent="No card";
+      skip.onclick = ()=> noCard(r, msg);
+
       const box = document.createElement("div"); box.className="accept";
-      box.append(input, btn);
+      box.append(input, btn, skip);
 
       fillConflict(msg, r.id);
       row.append(meta, box, msg);

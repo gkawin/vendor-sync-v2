@@ -70,6 +70,8 @@ Two consequences worth holding onto. The gate sits at **z-index 50, above the ca
 Square order.created/.updated  →  webhook upsert (status takes DEFAULT 'new')
                                →  cashier types the card no. + "Accept"
                                         → ticket='12', status='preparing', accepted_at=now
+                               →  …or "No card" (grab & go, nothing to make)
+                                        → status='picked_up', accepted_at=now, ticket stays null
                                →  staff taps "Ready ✓"    → status='ready', ready_at=now
                                →  staff taps "Picked up"  → status='picked_up'
                     ↩ back to making  ← status='preparing', ready_at=null
@@ -87,7 +89,7 @@ Square void / refund / return  →  webhook hides the row (status='picked_up')
                                   taps "Already got the … card" → cancel_ack_at
 ```
 
-**The cashier owns the number, Square doesn't.** Customers get a physical queue card (1–100) at the counter, so the order sits in staff.html's *Incoming* list until someone types the number of the card they just handed over. Square's `ticket_name` survives only as `square_ticket`, which prefills that box — the webhook never writes `ticket` at all. **`status` has no writer either**: its column DEFAULT of `'new'` is the entire mechanism routing orders through the cashier, precisely because the upsert omits the column. Re-running the init migration would reset that default and orders would start skipping the cashier.
+**The cashier owns the number, Square doesn't.** Customers get a physical queue card (1–100) at the counter, so the order sits in staff.html's *Incoming* list until someone types the number of the card they just handed over. Square's `ticket_name` survives only as `square_ticket`, which prefills that box — the webhook never writes `ticket` at all. Accept is not the only way out of that list: **"No card"** covers the grab-and-go case (a bottled drink handed straight over the counter — no card, nothing for the kitchen, nothing to print) by sending the row to `picked_up` with `ticket` left null, so it never reaches the board and never occupies a queue number. A mixed order still takes a card the normal way. There is no undo on that button, unlike the pickup bar — the row is off every screen at once. **`status` has no writer either**: its column DEFAULT of `'new'` is the entire mechanism routing orders through the cashier, precisely because the upsert omits the column. Re-running the init migration would reset that default and orders would start skipping the cashier.
 
 Every transition is a straight `update` on `orders` from staff.html — there is no state machine and nothing rejects a backwards move. Both reversals matter when reasoning about the table: **↩** on a Ready row sends it back to Making and **nulls `ready_at`**, and the transient undo bar after a pickup flips `picked_up` back to `ready` within ~10s. So `ready_at` is not monotonic and a row can leave and re-enter the UI.
 
