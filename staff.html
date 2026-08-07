@@ -91,6 +91,15 @@
     background:transparent;color:var(--sage-dim);
     border:1px solid var(--iron-line);box-shadow:none;font-weight:400;font-family:"Sarabun";font-size:.9rem;padding:12px 16px;
   }
+  /* "No card" stays secondary to Accept — never gold — but it sits on the
+     incoming row in daylight, and a hairline ghost was unreadable there.
+     Filled chip + cream text + a lifted edge, matching Accept's height. */
+  .btn.skip{
+    background:var(--iron-2);color:var(--cream);
+    border:1px solid var(--sage-dim);box-shadow:0 3px 0 rgba(0,0,0,.4);
+    font-family:"Sarabun";font-weight:600;font-size:.95rem;padding:13px 16px;
+  }
+  .btn.skip:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.4)}
   .actions{display:flex;align-items:center;gap:10px;flex:none;align-self:center}
   .btn.back{
     background:transparent;color:var(--sage-dim);
@@ -635,7 +644,8 @@
   // canceled_at instead, so the two stay tellable apart afterwards.
   //
   // There is no undo: the row leaves every screen at once and is reachable only
-  // by SQL after that. The ghost styling keeps it visually secondary to Accept.
+  // by SQL after that. `.btn.skip` keeps it visually secondary to Accept — it is
+  // legible, but it is never gold.
   async function noCard(row, msgEl){
     const { data, error } = await sb
       .from("orders")
@@ -699,7 +709,7 @@
       // Sits after Accept on purpose: a thumb reaching for the primary action
       // can't land on the one that makes the order disappear.
       const skip = document.createElement("button");
-      skip.className="btn ghost"; skip.textContent="No card";
+      skip.className="btn skip"; skip.textContent="No card";
       skip.onclick = ()=> noCard(r, msg);
 
       const box = document.createElement("div"); box.className="accept";
